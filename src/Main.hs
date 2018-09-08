@@ -3,6 +3,11 @@ module Main where
 import Network.Socket hiding (send, recv)
 import Network.Socket.ByteString
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.BEncode as BE
+import qualified Data.BEncode.BDict as BD
+import Data.BEncode ((.=!), (.:), (.=?))
 
 main :: IO ()
 main = do
@@ -34,12 +39,12 @@ handshakeMessage = BS.pack
   ,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42 -- NodeID
   ]
 
-extensionHandshakeMessage = BS.pack
-  [0,0,0,26 -- Length of the message
-  ,20 -- Type: extension
-  ,0 -- Extension type: handshake
-  ,100,49,58,109,100,49,49,58,117,116,95,109,101,116,97,100,97,116,97,105,49,101,101,101 -- d1:md11:ut_metadatai1eee
-  ]
+-- extensionHandshakeMessage = BS.pack
+--   [0,0,0,26 -- Length of the message
+--   ,20 -- Type: extension
+--   ,0 -- Extension type: handshake
+--   ,100,49,58,109,100,49,49,58,117,116,95,109,101,116,97,100,97,116,97,105,49,101,101,101 -- d1:md11:ut_metadatai1eee
+--   ]
 
 requestMetadataMessage = BS.pack
   [0,0,0,27 -- Length
@@ -47,3 +52,24 @@ requestMetadataMessage = BS.pack
   ,2 -- Extension type: ut_metadata
   ,100,56,58,109,115,103,95,116,121,112,101,105,48,101,53,58,112,105,101,99,101,105,48,101,101 -- d8:msg_typei0e5:piecei0ee
   ]
+
+-- create a length prefixed message
+createLPMessage :: BSL.ByteString -> BS.ByteString
+createLPMessage bs = BSL.toStrict (BSL.pack [0, 0, 0, length bs] <> bs)
+  where length = fromIntegral . toInteger . BSL.length
+
+metadataIdx = 1
+
+extensionHandshakeMessage :: BS.ByteString
+extensionHandshakeMessage = createLPMessage $ BSL.pack [20, 0] <> payload
+  where
+    payload = BE.encode $ EHPayload (Just metadataIdx)
+
+-- Extension Handshake Payload
+data EHPayload = EHPayload { ehpMetadataIdx :: Maybe Integer } deriving (Show, Read, Eq)
+
+instance BE.BEncode EHPayload where
+  toBEncode (EHPayload idx) = BE.toDict $ (BSC.pack "m") .=! extensionsDict .: BE.endDict
+    where
+      extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
+  fromBEncode = undefined
