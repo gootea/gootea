@@ -8,6 +8,8 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.BEncode as BE
 import qualified Data.BEncode.BDict as BD
 import Data.BEncode ((.=!), (.:), (.=?))
+import System.IO.Error
+import Debug.Trace
 
 main :: IO ()
 main = do
@@ -19,8 +21,9 @@ main = do
   putStrLn "Handshake message sent"
   send sock extensionHandshakeMessage
   putStrLn "Extension handshake sent"
-  handShakeResponse <- recv sock 68
-  putStrLn $ show handShakeResponse
+  recvHandshake sock
+  putStrLn "Received handshake message"
+
   _ <- recv sock 1024
   send sock requestMetadataMessage
   putStrLn "Request for first piece sent"
@@ -85,7 +88,7 @@ recvLPMessage sock fullbs = case readLPMessage fullbs of
 
 readLPMessage :: BS.ByteString -> (Maybe BS.ByteString, BS.ByteString)
 readLPMessage fullbs =
-  case getMsgLength fullbs of
+  case getMsgLength (traceShowId fullbs) of
     (Nothing, _) -> (Nothing, fullbs)
     (Just l, payloadbs) -> splitMessage l payloadbs
   where
@@ -99,3 +102,23 @@ readLPMessage fullbs =
       then let (message, rest) = BS.splitAt l bs in (Just message, rest)
       else (Nothing, bs)
 
+-- Handshake
+
+prefixHandshake = BS.pack
+  [19 -- Lenght prefix
+  ,66,105,116,84,111,114,114,101,110,116,32,112,114,111,116,111,99,111,108 -- BitTorrent protocol
+  ]
+
+recvHandshake :: Socket -> IO ()
+recvHandshake sock = do
+  bs <- recv sock 68
+  if (BS.length bs == 68)
+    then if (BS.isPrefixOf prefixHandshake bs)
+            then return ()
+            else ioError $ userError "Bad handshake message received"
+    else ioError $ userError "Wrong number of bytes received for handshake"
+
+-- data Message = Handshake BS.ByteString
+
+-- parseMessage :: BS.ByteString -> Maybe Message
+-- parseMessage = 
