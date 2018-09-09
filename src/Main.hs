@@ -73,3 +73,29 @@ instance BE.BEncode EHPayload where
     where
       extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
   fromBEncode = undefined
+
+
+--
+recvLPMessage :: Socket -> BS.ByteString -> IO (BS.ByteString, BS.ByteString)
+recvLPMessage sock fullbs = case readLPMessage fullbs of
+  (Just mbs, restbs) -> return (mbs, restbs)
+  (Nothing, restbs) -> do
+    recvbs <- recv sock 2048
+    recvLPMessage sock (restbs <> recvbs)
+
+readLPMessage :: BS.ByteString -> (Maybe BS.ByteString, BS.ByteString)
+readLPMessage fullbs =
+  case getMsgLength fullbs of
+    (Nothing, _) -> (Nothing, fullbs)
+    (Just l, payloadbs) -> splitMessage l payloadbs
+  where
+    getMsgLength bs = if BS.length lengthPrefix == 4
+      then (Just len, payload)
+      else (Nothing, bs)
+      where
+        (lengthPrefix, payload) = BS.splitAt 4 bs
+        len = BS.foldr (\w -> \total -> total * 256 + (fromIntegral w)) 0 lengthPrefix
+    splitMessage l bs = if (BS.length bs >= l)
+      then let (message, rest) = BS.splitAt l bs in (Just message, rest)
+      else (Nothing, bs)
+
