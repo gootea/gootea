@@ -17,7 +17,7 @@ main = do
   putStrLn "Socket created"
   connect sock sockAddr
   putStrLn "Socket connected"
-  send sock handshakeMessage
+  sendHandshake sock infohash nodeID
   putStrLn "Handshake message sent"
   send sock extensionHandshakeMessage
   putStrLn "Extension handshake sent"
@@ -33,14 +33,8 @@ main = do
   putStrLn $ show response
 
 sockAddr = SockAddrInet 6881 (tupleToHostAddress (5,39,91,197))
-
-handshakeMessage = BS.pack
-  [19 -- Lenght prefix
-  , 66,105,116,84,111,114,114,101,110,116,32,112,114,111,116,111,99,111,108 -- BitTorrent protocol
-  ,0,0,0,0,0,16,0,0 -- Indicate that we support extensions
-  , 254,10,72,13,167,152,42,193,185,141,126,15,9,91,5,223,56,175,46,130 -- InfoHash of Chasing Ice
-  ,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42 -- NodeID
-  ]
+infohash = BS.pack [254,10,72,13,167,152,42,193,185,141,126,15,9,91,5,223,56,175,46,130] -- InfoHash of Chasing Ice
+nodeID = BS.pack [42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42]
 
 -- extensionHandshakeMessage = BS.pack
 --   [0,0,0,26 -- Length of the message
@@ -102,12 +96,23 @@ readLPMessage fullbs =
       then let (message, rest) = BS.splitAt l bs in (Just message, rest)
       else (Nothing, bs)
 
+
+------------
 -- Handshake
+------------
 
 prefixHandshake = BS.pack
   [19 -- Lenght prefix
   ,66,105,116,84,111,114,114,101,110,116,32,112,114,111,116,111,99,111,108 -- BitTorrent protocol
   ]
+
+sendHandshake :: Socket -> BS.ByteString -> BS.ByteString -> IO ()
+sendHandshake sock infohash nodeID =
+  send sock message >> return ()
+  where
+    message = prefixHandshake <> extensions <> infohash <> nodeID
+    extensions = BS.pack [0,0,0,0,0,16,0,0]
+
 
 recvHandshake :: Socket -> IO ()
 recvHandshake sock = do
@@ -118,7 +123,17 @@ recvHandshake sock = do
             else ioError $ userError "Bad handshake message received"
     else ioError $ userError "Wrong number of bytes received for handshake"
 
--- data Message = Handshake BS.ByteString
+data Message = ExtensionMessage ExtensionMessage
 
--- parseMessage :: BS.ByteString -> Maybe Message
--- parseMessage = 
+parseMessage :: BS.ByteString -> Maybe Message
+parseMessage bs = let
+  (messageType, payload) = BS.splitAt 1 bs
+  in case BS.head messageType of
+       20 -> ExtensionMessage <$> parseExtensionMessage payload
+       _ -> Nothing
+
+data ExtensionMessage = EMHandshake
+                      | EMMetadata
+
+parseExtensionMessage :: BS.ByteString -> Maybe ExtensionMessage
+parseExtensionMessage = undefined
