@@ -7,9 +7,11 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.BEncode as BE
 import qualified Data.BEncode.BDict as BD
-import Data.BEncode ((.=!), (.:), (.=?))
+import Data.BEncode ((.=!), (.:), (.=?), fromDict, (<$>!), (<$>?), req, field)
 import System.IO.Error
 import Debug.Trace
+import Data.Word
+import Control.Applicative
 
 main :: IO ()
 main = do
@@ -17,20 +19,28 @@ main = do
   putStrLn "Socket created"
   connect sock sockAddr
   putStrLn "Socket connected"
+  putStrLn ""
+
   sendHandshake sock infohash nodeID
   putStrLn "Handshake message sent"
-  send sock extensionHandshakeMessage
-  putStrLn "Extension handshake sent"
   recvHandshake sock
   putStrLn "Received handshake message"
+  putStrLn ""
 
-  _ <- recv sock 1024
-  send sock requestMetadataMessage
-  putStrLn "Request for first piece sent"
-  response <- recv sock 1024
-  putStrLn $ show response
-  response <- recv sock 1024
-  putStrLn $ show response
+  send sock extensionHandshakeMessage
+  putStrLn "Extension handshake sent"
+  (idx, rest) <- recvExtensionHandshakeMessage sock BS.empty
+  putStrLn "Received metadata index:"
+  putStrLn $ show idx
+  putStrLn ""
+
+  -- _ <- recv sock 1024
+  -- send sock requestMetadataMessage
+  -- putStrLn "Request for first piece sent"
+  -- response <- recv sock 1024
+  -- putStrLn $ show response
+  -- response <- recv sock 1024
+  -- putStrLn $ show response
 
 sockAddr = SockAddrInet 6881 (tupleToHostAddress (5,39,91,197))
 infohash = BS.pack [254,10,72,13,167,152,42,193,185,141,126,15,9,91,5,223,56,175,46,130] -- InfoHash of Chasing Ice
@@ -54,48 +64,6 @@ requestMetadataMessage = BS.pack
 createLPMessage :: BSL.ByteString -> BS.ByteString
 createLPMessage bs = BSL.toStrict (BSL.pack [0, 0, 0, length bs] <> bs)
   where length = fromIntegral . toInteger . BSL.length
-
-metadataIdx = 1
-
-extensionHandshakeMessage :: BS.ByteString
-extensionHandshakeMessage = createLPMessage $ BSL.pack [20, 0] <> payload
-  where
-    payload = BE.encode $ EHPayload (Just metadataIdx)
-
--- Extension Handshake Payload
-data EHPayload = EHPayload { ehpMetadataIdx :: Maybe Integer } deriving (Show, Read, Eq)
-
-instance BE.BEncode EHPayload where
-  toBEncode (EHPayload idx) = BE.toDict $ (BSC.pack "m") .=! extensionsDict .: BE.endDict
-    where
-      extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
-  fromBEncode = undefined
-
-
---
-recvLPMessage :: Socket -> BS.ByteString -> IO (BS.ByteString, BS.ByteString)
-recvLPMessage sock fullbs = case readLPMessage fullbs of
-  (Just mbs, restbs) -> return (mbs, restbs)
-  (Nothing, restbs) -> do
-    recvbs <- recv sock 2048
-    recvLPMessage sock (restbs <> recvbs)
-
-readLPMessage :: BS.ByteString -> (Maybe BS.ByteString, BS.ByteString)
-readLPMessage fullbs =
-  case getMsgLength (traceShowId fullbs) of
-    (Nothing, _) -> (Nothing, fullbs)
-    (Just l, payloadbs) -> splitMessage l payloadbs
-  where
-    getMsgLength bs = if BS.length lengthPrefix == 4
-      then (Just len, payload)
-      else (Nothing, bs)
-      where
-        (lengthPrefix, payload) = BS.splitAt 4 bs
-        len = BS.foldr (\w -> \total -> total * 256 + (fromIntegral w)) 0 lengthPrefix
-    splitMessage l bs = if (BS.length bs >= l)
-      then let (message, rest) = BS.splitAt l bs in (Just message, rest)
-      else (Nothing, bs)
-
 
 ------------
 -- Handshake
@@ -123,17 +91,99 @@ recvHandshake sock = do
             else ioError $ userError "Bad handshake message received"
     else ioError $ userError "Wrong number of bytes received for handshake"
 
-data Message = ExtensionMessage ExtensionMessage
 
-parseMessage :: BS.ByteString -> Maybe Message
-parseMessage bs = let
-  (messageType, payload) = BS.splitAt 1 bs
-  in case BS.head messageType of
-       20 -> ExtensionMessage <$> parseExtensionMessage payload
-       _ -> Nothing
+------------------------------------------
+-- Generic Bittorrent message manipulation
+------------------------------------------
 
-data ExtensionMessage = EMHandshake
+recvLPMessage :: Socket -> BS.ByteString -> IO (BS.ByteString, BS.ByteString)
+recvLPMessage sock fullbs = case readLPMessage fullbs of
+  (Just mbs, restbs) -> return (mbs, restbs)
+  (Nothing, restbs) -> do
+    recvbs <- recv sock 2048
+    recvLPMessage sock (restbs <> recvbs)
+
+readLPMessage :: BS.ByteString -> (Maybe BS.ByteString, BS.ByteString)
+readLPMessage fullbs =
+  case (getMsgLength fullbs ) of
+    (Nothing, _) -> (Nothing, fullbs)
+    (Just l, payloadbs) -> splitMessage (fromInteger l) payloadbs
+  where
+    getMsgLength bs = if BS.length lengthPrefix == 4
+      then (Just len, payload)
+      else (Nothing, bs)
+      where
+        (lengthPrefix, payload) = BS.splitAt 4 bs
+        len = BS.foldl (\total -> \w -> total * 256 + (toInteger w)) 0 lengthPrefix
+    splitMessage l bs = if (BS.length bs >= l)
+      then let (message, rest) = BS.splitAt l bs in (Just message, rest)
+      else (Nothing, bs)
+
+----------------------------------
+-- Extension messages manipulation
+----------------------------------
+
+data ExtensionMessage = EMHandshake EHPayload
                       | EMMetadata
+                      deriving (Eq, Show)
 
-parseExtensionMessage :: BS.ByteString -> Maybe ExtensionMessage
-parseExtensionMessage = undefined
+parseExtensionMessage :: BS.ByteString -> Word8 -> Maybe ExtensionMessage
+parseExtensionMessage bs metadataIdx = do
+  embs <- case BS.uncons bs of
+    Just (20, rest) -> Just rest
+    _ -> Nothing
+  em <- case BS.uncons embs of
+    Just (0, message) -> EMHandshake <$> parseEMHandshake message
+    Just (idx, message) | idx == metadataIdx -> parseEMMetadata message
+    _ -> traceShowId Nothing
+  return em
+
+parseEMHandshake :: BS.ByteString -> Maybe EHPayload
+parseEMHandshake bs = case traceShowId $ BE.decode bs of
+  Left _ -> Nothing
+  Right m -> Just m
+
+parseEMMetadata :: BS.ByteString -> Maybe ExtensionMessage
+parseEMMetadata = undefined
+
+recvExtensionMessage :: Socket -> BS.ByteString -> Word8 -> IO (ExtensionMessage, BS.ByteString)
+recvExtensionMessage sock previous metadataIdx = do
+  (message, rest) <- recvLPMessage sock previous
+  case parseExtensionMessage message metadataIdx of
+    Just em -> return (em, rest)
+    Nothing -> recvExtensionMessage sock rest metadataIdx
+
+
+------------------------------
+-- Extension Handshake message
+------------------------------
+
+metadataIdx = 1
+
+extensionHandshakeMessage :: BS.ByteString
+extensionHandshakeMessage = createLPMessage $ BSL.pack [20, 0] <> payload
+  where
+    payload = BE.encode $ EHPayload $ EHMPayload (Just metadataIdx)
+
+-- Extension Handshake Payload
+data EHPayload = EHPayload { m :: EHMPayload } deriving (Show, Read, Eq)
+
+instance BE.BEncode EHPayload where
+  toBEncode (EHPayload m) = BE.toDict $ (BSC.pack "m") .=! m .: BE.endDict
+    -- where
+    --   extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
+  fromBEncode = fromDict (EHPayload <$>! (BSC.pack "m"))
+
+data EHMPayload = EHMPayload { ehpMetadataIdx :: Maybe Integer } deriving (Show, Read, Eq)
+
+instance BE.BEncode EHMPayload where
+  toBEncode (EHMPayload idx) = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
+  fromBEncode = fromDict (EHMPayload <$>? (BSC.pack "ut_metadata"))
+
+recvExtensionHandshakeMessage :: Socket -> BS.ByteString -> IO (Maybe Integer, BS.ByteString)
+recvExtensionHandshakeMessage sock previous = do
+  (message, rest) <- recvExtensionMessage sock previous 255
+  case message of
+    EMHandshake (EHPayload payload) -> return (ehpMetadataIdx payload, rest)
+    _ -> recvExtensionHandshakeMessage sock rest
+
