@@ -13,6 +13,7 @@ import Debug.Trace
 import Data.Word
 import Data.Maybe
 import Control.Applicative
+import Network.Bittorrent.LPMessage
 
 main :: IO ()
 main = do
@@ -96,41 +97,6 @@ recvHandshake sock = do
             else ioError $ userError "Bad handshake message received"
     else ioError $ userError "Wrong number of bytes received for handshake"
 
-
-------------------------------------------
--- Generic Bittorrent message manipulation
-------------------------------------------
-
-recvLPMessage :: Socket -> BS.ByteString -> IO (BS.ByteString, BS.ByteString)
-recvLPMessage sock fullbs = case readLPMessage fullbs of
-  (Just mbs, restbs) -> return (mbs, restbs)
-  (Nothing, restbs) -> do
-    recvbs <- recv sock 2048
-    recvLPMessage sock (restbs <> recvbs)
-
-readLPMessage :: BS.ByteString -> (Maybe BS.ByteString, BS.ByteString)
-readLPMessage fullbs =
-  case (getMsgLength fullbs ) of
-    (Nothing, _) -> (Nothing, fullbs)
-    (Just l, payloadbs) -> splitMessage (fromInteger l) payloadbs
-  where
-    getMsgLength bs = if BS.length lengthPrefix == 4
-      then (Just len, payload)
-      else (Nothing, bs)
-      where
-        (lengthPrefix, payload) = BS.splitAt 4 bs
-        len = BS.foldl (\total -> \w -> total * 256 + (toInteger w)) 0 lengthPrefix
-    splitMessage l bs = if (BS.length bs >= l)
-      then let (message, rest) = BS.splitAt l bs in (Just message, rest)
-      else (Nothing, bs)
-
--- create a length prefixed message
-createLPMessage :: BSL.ByteString -> BS.ByteString
-createLPMessage bs = BSL.toStrict (BSL.pack [0, 0, 0, length bs] <> bs)
-  where length = fromIntegral . toInteger . BSL.length
-
-sendLPMessage :: Socket -> BSL.ByteString -> IO Int
-sendLPMessage sock = send sock . createLPMessage
 
 ----------------------------------
 -- Extension messages manipulation
