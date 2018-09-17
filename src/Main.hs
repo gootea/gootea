@@ -7,10 +7,11 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.BEncode as BE
 import qualified Data.BEncode.BDict as BD
-import Data.BEncode ((.=!), (.:), (.=?), fromDict, (<$>!), (<$>?), req, field)
+import Data.BEncode ((.=!), (.:), (.=?), fromDict, (<*>!), (<*>?), (<$>!), (<$>?), req, field)
 import System.IO.Error
 import Debug.Trace
 import Data.Word
+import Data.Maybe
 import Control.Applicative
 
 main :: IO ()
@@ -33,6 +34,14 @@ main = do
   putStrLn "Received metadata index:"
   putStrLn $ show idx
   putStrLn ""
+
+  askPiece sock (fromJust idx) 0
+  putStrLn "Asked for piece 0"
+
+  (piece, size) <- recvPiece sock rest
+  putStrLn "Received piece"
+  putStrLn $ show piece
+  putStrLn $ show size
 
   -- _ <- recv sock 1024
   -- send sock requestMetadataMessage
@@ -60,10 +69,6 @@ requestMetadataMessage = BS.pack
   ,100,56,58,109,115,103,95,116,121,112,101,105,48,101,53,58,112,105,101,99,101,105,48,101,101 -- d8:msg_typei0e5:piecei0ee
   ]
 
--- create a length prefixed message
-createLPMessage :: BSL.ByteString -> BS.ByteString
-createLPMessage bs = BSL.toStrict (BSL.pack [0, 0, 0, length bs] <> bs)
-  where length = fromIntegral . toInteger . BSL.length
 
 ------------
 -- Handshake
@@ -119,39 +124,55 @@ readLPMessage fullbs =
       then let (message, rest) = BS.splitAt l bs in (Just message, rest)
       else (Nothing, bs)
 
+-- create a length prefixed message
+createLPMessage :: BSL.ByteString -> BS.ByteString
+createLPMessage bs = BSL.toStrict (BSL.pack [0, 0, 0, length bs] <> bs)
+  where length = fromIntegral . toInteger . BSL.length
+
+sendLPMessage :: Socket -> BSL.ByteString -> IO Int
+sendLPMessage sock = send sock . createLPMessage
+
 ----------------------------------
 -- Extension messages manipulation
 ----------------------------------
 
 data ExtensionMessage = EMHandshake EHPayload
-                      | EMMetadata
+                      | EMMetadata UTMetadata
                       deriving (Eq, Show)
 
-parseExtensionMessage :: BS.ByteString -> Word8 -> Maybe ExtensionMessage
-parseExtensionMessage bs metadataIdx = do
+parseExtensionMessage :: BS.ByteString -> Maybe ExtensionMessage
+parseExtensionMessage bs = do
   embs <- case BS.uncons bs of
     Just (20, rest) -> Just rest
     _ -> Nothing
   em <- case BS.uncons embs of
     Just (0, message) -> EMHandshake <$> parseEMHandshake message
-    Just (idx, message) | idx == metadataIdx -> parseEMMetadata message
+    Just (1, message) -> EMMetadata <$> parseEMMetadata message
     _ -> traceShowId Nothing
   return em
 
 parseEMHandshake :: BS.ByteString -> Maybe EHPayload
-parseEMHandshake bs = case traceShowId $ BE.decode bs of
+parseEMHandshake bs = case BE.decode bs of
   Left _ -> Nothing
   Right m -> Just m
 
-parseEMMetadata :: BS.ByteString -> Maybe ExtensionMessage
-parseEMMetadata = undefined
+parseEMMetadata :: BS.ByteString -> Maybe UTMetadata
+parseEMMetadata bs = case BE.decode bs of
+  Left _ -> Nothing
+  Right m -> Just m
 
-recvExtensionMessage :: Socket -> BS.ByteString -> Word8 -> IO (ExtensionMessage, BS.ByteString)
-recvExtensionMessage sock previous metadataIdx = do
+recvExtensionMessage :: Socket -> BS.ByteString -> IO (ExtensionMessage, BS.ByteString)
+recvExtensionMessage sock previous = do
   (message, rest) <- recvLPMessage sock previous
-  case parseExtensionMessage message metadataIdx of
+  case parseExtensionMessage message of
     Just em -> return (em, rest)
-    Nothing -> recvExtensionMessage sock rest metadataIdx
+    Nothing -> recvExtensionMessage sock rest
+
+sendExtensionMessage :: Socket -> Word8 -> ExtensionMessage -> IO Int
+sendExtensionMessage sock metadataIdx = sendLPMessage sock . encodeEM
+  where
+    encodeEM (EMHandshake p) = BSL.pack [20, 0] <> BE.encode p
+    encodeEM (EMMetadata p) = BSL.pack [20, metadataIdx] <> BE.encode p
 
 
 ------------------------------
@@ -174,16 +195,52 @@ instance BE.BEncode EHPayload where
     --   extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
   fromBEncode = fromDict (EHPayload <$>! (BSC.pack "m"))
 
-data EHMPayload = EHMPayload { ehpMetadataIdx :: Maybe Integer } deriving (Show, Read, Eq)
+data EHMPayload = EHMPayload { ehpMetadataIdx :: Maybe Word8 } deriving (Show, Read, Eq)
 
 instance BE.BEncode EHMPayload where
   toBEncode (EHMPayload idx) = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
   fromBEncode = fromDict (EHMPayload <$>? (BSC.pack "ut_metadata"))
 
-recvExtensionHandshakeMessage :: Socket -> BS.ByteString -> IO (Maybe Integer, BS.ByteString)
+recvExtensionHandshakeMessage :: Socket -> BS.ByteString -> IO (Maybe Word8, BS.ByteString)
 recvExtensionHandshakeMessage sock previous = do
-  (message, rest) <- recvExtensionMessage sock previous 255
+  (message, rest) <- recvExtensionMessage sock previous
   case message of
     EMHandshake (EHPayload payload) -> return (ehpMetadataIdx payload, rest)
     _ -> recvExtensionHandshakeMessage sock rest
+
+
+----------------------
+-- UT Metadata message
+----------------------
+
+data UTMetadata = UTMetadata 
+  { emmType :: Int
+  , emmPiece :: Int
+  , emmTotalSize :: Maybe Int
+  } deriving (Eq, Show)
+
+instance BE.BEncode UTMetadata where
+  toBEncode emm = BE.toDict $
+    (BSC.pack "msg_type") .=! (emmType emm)
+    .: (BSC.pack "piece" ).=! (emmPiece emm)
+    .: (BSC.pack "total_size") .=? (emmTotalSize emm)
+    .: BE.endDict
+  fromBEncode = fromDict $ do
+    UTMetadata <$>! (BSC.pack "msg_type")
+               <*>! (BSC.pack "piece")
+               <*>? (BSC.pack "total_size")
+
+
+askPiece :: Socket -> Word8 -> Int -> IO Int
+askPiece sock metadataIdx piece = sendExtensionMessage sock metadataIdx $ EMMetadata $ UTMetadata 0 piece Nothing
+
+recvPiece :: Socket -> BS.ByteString -> IO (Int, Maybe Int)
+recvPiece sock previous = do
+    (em, rest) <- recvExtensionMessage sock previous
+    case em of
+      EMMetadata (UTMetadata 1 piece size) -> return (piece, size)
+      EMMetadata (UTMetadata 2 _ _) -> ioError $ userError "peer was not able to give us the piece we asked for"
+      _ -> do
+          putStrLn "  recvPiece is recursing"
+          recvPiece sock rest
 
