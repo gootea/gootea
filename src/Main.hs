@@ -3,11 +3,6 @@ module Main where
 import Network.Socket hiding (send, recv)
 import Network.Socket.ByteString
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.BEncode as BE
-import qualified Data.BEncode.BDict as BD
-import Data.BEncode ((.=!), (.:), (.=?), fromDict, (<*>!), (<*>?), (<$>!), (<$>?), req, field)
 import System.IO.Error
 import Debug.Trace
 import Data.Word
@@ -15,6 +10,8 @@ import Data.Maybe
 import Control.Applicative
 import Network.Bittorrent.LPMessage
 import Network.Bittorrent.Extension
+import qualified Data.BEncode as BE
+import qualified Data.Torrent as T
 
 main :: IO ()
 main = do
@@ -37,7 +34,11 @@ main = do
   (pieceNumber, pieceBytes, remaining) <- getMetadataPiece sock idx 0 rest
   putStrLn "Received piece"
   putStrLn $ show pieceNumber
-  putStrLn $ show pieceBytes
+  -- putStrLn $ show pieceBytes
+  
+  let torrent = BE.decode pieceBytes :: Either String T.Metainfo
+
+  putStrLn $ show torrent
 
   -- _ <- recv sock 1024
   -- send sock requestMetadataMessage
