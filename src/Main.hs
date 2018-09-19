@@ -14,6 +14,7 @@ import Data.Word
 import Data.Maybe
 import Control.Applicative
 import Network.Bittorrent.LPMessage
+import Network.Bittorrent.Extension
 
 main :: IO ()
 main = do
@@ -29,20 +30,14 @@ main = do
   putStrLn "Received handshake message"
   putStrLn ""
 
-  send sock extensionHandshakeMessage
-  putStrLn "Extension handshake sent"
-  (idx, rest) <- recvExtensionHandshakeMessage sock BS.empty
-  putStrLn "Received metadata index:"
+  (idx, rest) <- doExtensionHandshake sock
+  putStrLn "Extension handshake is done"
   putStrLn $ show idx
-  putStrLn ""
 
-  askPiece sock (fromJust idx) 0
-  putStrLn "Asked for piece 0"
-
-  (piece, size) <- recvPiece sock rest
+  (pieceNumber, pieceBytes, remaining) <- getMetadataPiece sock idx 0 rest
   putStrLn "Received piece"
-  putStrLn $ show piece
-  putStrLn $ show size
+  putStrLn $ show pieceNumber
+  putStrLn $ show pieceBytes
 
   -- _ <- recv sock 1024
   -- send sock requestMetadataMessage
@@ -97,116 +92,4 @@ recvHandshake sock = do
             else ioError $ userError "Bad handshake message received"
     else ioError $ userError "Wrong number of bytes received for handshake"
 
-
-----------------------------------
--- Extension messages manipulation
-----------------------------------
-
-data ExtensionMessage = EMHandshake EHPayload
-                      | EMMetadata UTMetadata
-                      deriving (Eq, Show)
-
-parseExtensionMessage :: BS.ByteString -> Maybe ExtensionMessage
-parseExtensionMessage bs = do
-  embs <- case BS.uncons bs of
-    Just (20, rest) -> Just rest
-    _ -> Nothing
-  em <- case BS.uncons embs of
-    Just (0, message) -> EMHandshake <$> parseEMHandshake message
-    Just (1, message) -> EMMetadata <$> parseEMMetadata message
-    _ -> traceShowId Nothing
-  return em
-
-parseEMHandshake :: BS.ByteString -> Maybe EHPayload
-parseEMHandshake bs = case BE.decode bs of
-  Left _ -> Nothing
-  Right m -> Just m
-
-parseEMMetadata :: BS.ByteString -> Maybe UTMetadata
-parseEMMetadata bs = case BE.decode bs of
-  Left _ -> Nothing
-  Right m -> Just m
-
-recvExtensionMessage :: Socket -> BS.ByteString -> IO (ExtensionMessage, BS.ByteString)
-recvExtensionMessage sock previous = do
-  (message, rest) <- recvLPMessage sock previous
-  case parseExtensionMessage message of
-    Just em -> return (em, rest)
-    Nothing -> recvExtensionMessage sock rest
-
-sendExtensionMessage :: Socket -> Word8 -> ExtensionMessage -> IO Int
-sendExtensionMessage sock metadataIdx = sendLPMessage sock . encodeEM
-  where
-    encodeEM (EMHandshake p) = BSL.pack [20, 0] <> BE.encode p
-    encodeEM (EMMetadata p) = BSL.pack [20, metadataIdx] <> BE.encode p
-
-
-------------------------------
--- Extension Handshake message
-------------------------------
-
-metadataIdx = 1
-
-extensionHandshakeMessage :: BS.ByteString
-extensionHandshakeMessage = createLPMessage $ BSL.pack [20, 0] <> payload
-  where
-    payload = BE.encode $ EHPayload $ EHMPayload (Just metadataIdx)
-
--- Extension Handshake Payload
-data EHPayload = EHPayload { m :: EHMPayload } deriving (Show, Read, Eq)
-
-instance BE.BEncode EHPayload where
-  toBEncode (EHPayload m) = BE.toDict $ (BSC.pack "m") .=! m .: BE.endDict
-    -- where
-    --   extensionsDict = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
-  fromBEncode = fromDict (EHPayload <$>! (BSC.pack "m"))
-
-data EHMPayload = EHMPayload { ehpMetadataIdx :: Maybe Word8 } deriving (Show, Read, Eq)
-
-instance BE.BEncode EHMPayload where
-  toBEncode (EHMPayload idx) = BE.toDict $ (BSC.pack "ut_metadata") .=? idx .: BE.endDict
-  fromBEncode = fromDict (EHMPayload <$>? (BSC.pack "ut_metadata"))
-
-recvExtensionHandshakeMessage :: Socket -> BS.ByteString -> IO (Maybe Word8, BS.ByteString)
-recvExtensionHandshakeMessage sock previous = do
-  (message, rest) <- recvExtensionMessage sock previous
-  case message of
-    EMHandshake (EHPayload payload) -> return (ehpMetadataIdx payload, rest)
-    _ -> recvExtensionHandshakeMessage sock rest
-
-
-----------------------
--- UT Metadata message
-----------------------
-
-data UTMetadata = UTMetadata 
-  { emmType :: Int
-  , emmPiece :: Int
-  , emmTotalSize :: Maybe Int
-  } deriving (Eq, Show)
-
-instance BE.BEncode UTMetadata where
-  toBEncode emm = BE.toDict $
-    (BSC.pack "msg_type") .=! (emmType emm)
-    .: (BSC.pack "piece" ).=! (emmPiece emm)
-    .: (BSC.pack "total_size") .=? (emmTotalSize emm)
-    .: BE.endDict
-  fromBEncode = fromDict $ do
-    UTMetadata <$>! (BSC.pack "msg_type")
-               <*>! (BSC.pack "piece")
-               <*>? (BSC.pack "total_size")
-
-
-askPiece :: Socket -> Word8 -> Int -> IO Int
-askPiece sock metadataIdx piece = sendExtensionMessage sock metadataIdx $ EMMetadata $ UTMetadata 0 piece Nothing
-
-recvPiece :: Socket -> BS.ByteString -> IO (Int, Maybe Int)
-recvPiece sock previous = do
-    (em, rest) <- recvExtensionMessage sock previous
-    case em of
-      EMMetadata (UTMetadata 1 piece size) -> return (piece, size)
-      EMMetadata (UTMetadata 2 _ _) -> ioError $ userError "peer was not able to give us the piece we asked for"
-      _ -> do
-          putStrLn "  recvPiece is recursing"
-          recvPiece sock rest
 
