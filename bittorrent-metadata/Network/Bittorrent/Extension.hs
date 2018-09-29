@@ -1,6 +1,6 @@
 module Network.Bittorrent.Extension
   ( doExtensionHandshake
-  , getMetadataPiece
+  , getMetadata
   ) where
 
 import Data.BEncode
@@ -72,16 +72,17 @@ metadataIdx = 1
 extensionHandshakeMessage :: BS.ByteString
 extensionHandshakeMessage = createLPMessage $ BSL.pack [20, 0] <> payload
   where
-    payload = encode $ EHPayload $ EHMPayload (Just metadataIdx)
+    payload = encode $ EHPayload (EHMPayload (Just metadataIdx)) Nothing
 
 -- Extension Handshake Payload
 data EHPayload = EHPayload
   { m :: EHMPayload
+  , metadataSize :: Maybe Int
   } deriving (Show, Read, Eq)
 
 instance BEncode EHPayload where
-  toBEncode (EHPayload m) = toDict $ (BSC.pack "m") .=! m .: endDict
-  fromBEncode = fromDict (EHPayload <$>! (BSC.pack "m"))
+  toBEncode (EHPayload m _) = toDict $ (BSC.pack "m") .=! m .: endDict
+  fromBEncode = fromDict (EHPayload <$>! (BSC.pack "m") <*>? (BSC.pack "metadata_size"))
 
 data EHMPayload = EHMPayload
   { ehpMetadataIdx :: Maybe Word8
@@ -93,21 +94,24 @@ instance BEncode EHMPayload where
   fromBEncode = fromDict (EHMPayload <$>? (BSC.pack "ut_metadata"))
 
 recvExtensionHandshakeMessage ::
-     Socket -> BS.ByteString -> IO (Maybe Word8, BS.ByteString)
+     Socket -> BS.ByteString -> IO (Maybe Word8, Int, BS.ByteString)
 recvExtensionHandshakeMessage sock previous = do
   (message, _, rest) <- recvExtensionMessage sock previous
   case message of
-    EMHandshake (EHPayload payload) -> return (ehpMetadataIdx payload, rest)
+    EMHandshake (EHPayload payload metadataSize) ->
+      case metadataSize of
+        Just size -> return (ehpMetadataIdx payload, size, rest)
+        Nothing -> ioError $ userError "Metadatasize is not defined, cannot continue"
     _ -> recvExtensionHandshakeMessage sock rest
 
 -- Do the extension handshake and return the index of the metadata extension of
 -- the peer plus the unconsummed bytes
-doExtensionHandshake :: Socket -> IO (Word8, BS.ByteString)
+doExtensionHandshake :: Socket -> IO (Word8, Int, BS.ByteString)
 doExtensionHandshake sock = do
   send sock extensionHandshakeMessage
-  (idx, rest) <- recvExtensionHandshakeMessage sock BS.empty
+  (idx, metadataSize, rest) <- recvExtensionHandshakeMessage sock BS.empty
   case idx of
-    Just idx -> return (idx, rest)
+    Just idx -> return (idx, metadataSize, rest)
     Nothing ->
       ioError $ userError "The peer doesn't support ut_metadata extension"
 
@@ -138,32 +142,43 @@ askPiece sock metadataIdx piece =
   sendExtensionMessage sock metadataIdx $
   EMMetadata $ UTMetadata 0 piece Nothing
 
-recvPiece :: Socket -> BS.ByteString -> IO (Int, BS.ByteString, BS.ByteString)
-recvPiece sock previous = do
+recvPiece :: Socket -> BS.ByteString -> Int -> IO (Int, BS.ByteString, BS.ByteString)
+recvPiece sock previous pieceSize = do
   (em, bytes, rest) <- recvExtensionMessage sock previous
   case em of
-    EMMetadata (UTMetadata 1 piece (Just pieceSize)) ->
+    EMMetadata (UTMetadata 1 piece _) ->
       let messageSize = BS.length bytes
           pieceBytes = BS.drop (messageSize - pieceSize) bytes
        in return (piece, pieceBytes, rest)
-    EMMetadata (UTMetadata 1 piece Nothing) ->
-      ioError $
-      userError
-        "Cannot extract the bytes from the bittorrent message if the piece size is not specified"
     EMMetadata (UTMetadata 2 _ _) ->
       ioError $ userError "peer was not able to give us the piece we asked for"
     _ -> do
-      putStrLn "  recvPiece is recursing"
-      recvPiece sock rest
+      recvPiece sock rest pieceSize
 
 -- Get a piece of metadata
--- Return the piece number, the piece bytes and the unconsummed bytes
+-- Return the piece bytes and the unconsummed bytes
 getMetadataPiece ::
      Socket
   -> Word8
   -> Int
+  -> Int
   -> BS.ByteString
-  -> IO (Int, BS.ByteString, BS.ByteString)
-getMetadataPiece sock metadataIdx piece previousBS = do
+  -> IO (BS.ByteString, BS.ByteString)
+getMetadataPiece sock metadataIdx piece pieceSize previousBS = do
   askPiece sock metadataIdx piece
-  recvPiece sock previousBS
+  (receivedPiece, bytes, remaining) <- recvPiece sock previousBS pieceSize
+  if piece == receivedPiece then return (bytes, remaining)
+  else ioError $ userError "The piece received was not the one asked for"
+
+getMetadata :: Socket -> Word8 -> Int -> BS.ByteString -> IO BS.ByteString
+getMetadata sock metadataIdx metadataSize previousBS = doGet 0 metadataSize previousBS
+  where
+    doGet :: Int -> Int -> BS.ByteString -> IO BS.ByteString
+    doGet piece size prevBytes =
+      if size > 16384 then
+          do
+            (pieceBytes, remainingBytes) <- getMetadataPiece sock metadataIdx piece 16384 prevBytes
+            otherPieces <- doGet (piece + 1) (size - 16384) remainingBytes
+            return $ BS.append pieceBytes otherPieces
+      else fst <$> getMetadataPiece sock metadataIdx piece size prevBytes
+
