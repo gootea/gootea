@@ -35,6 +35,7 @@ executable gootea
 library bittorrent-metadata
   exposed-modules:     Network.Bittorrent.LPMessage
                      , Network.Bittorrent.Extension
+                     , Network.Bittorrent.Client
                      , Data.Torrent
 
   -- other-modules:
