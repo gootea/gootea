@@ -1,14 +1,14 @@
 module Main where
 
+import Collector.Collector
 import Control.Concurrent
 import Control.Monad
 import DHT.Server
-import DHT.Types (InfoHash)
+import DHT.Types (DHTEvent(..), InfoHash)
 import Data.List.Split
 import Network.Socket hiding (recv, recvFrom)
 import System.Console.GetOpt
 import System.Environment
-import Collector.Collector
 
 main :: IO ()
 main = do
@@ -21,21 +21,25 @@ main = do
 start :: Configuration -> IO ()
 start conf = do
   seeds <- resolveSeeds $ _cSeedHosts conf
-  _ <- putStrLn $ "The DHT server will be initialized with those seeds: " ++ show seeds
+  _ <-
+    putStrLn $
+    "The DHT server will be initialized with those seeds: " ++ show seeds
   dhtServer <- createServer (_cPort conf) seeds
   _ <- forkIO $ runServer dhtServer
   _ <- putStrLn "Server is running"
   let outputChan = _dOutputChan dhtServer
   let collection = newCollection 3
-  doLoop outputChan collection
-  where
-    doLoop :: Chan DHTOutputMessage -> Collection InfoHash -> IO ()
-    doLoop chan collection = do
-      event <- readChan chan
-      case even of
-        DHTOutputMessage (DHTOutputEvent (DHTInfoHashDiscovered ih)) ->
-        _ -> return ()
-      doLoop chan collection
+  handleDHTEvents outputChan collection
+
+handleDHTEvents :: Chan DHTOutputMessage -> Collection InfoHash -> IO ()
+handleDHTEvents chan collection = do
+  event <- readChan chan
+  let (newCollection, newIH) =
+        case event of
+          DHTOutputEvent (DHTInfoHashDiscovered ih) ->
+            filterThroughCollection collection ih
+          _ -> (collection, Nothing)
+  handleDHTEvents chan collection
 
 resolveSeeds :: [(HostName, ServiceName)] -> IO [SockAddr]
 resolveSeeds = fmap (fmap addrAddress . join) . mapM resolveTuple
