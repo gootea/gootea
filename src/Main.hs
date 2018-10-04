@@ -3,8 +3,9 @@ module Main where
 import Collector.Collector
 import Control.Concurrent
 import Control.Monad
+import DHT.NodeID (InfoHash)
 import DHT.Server
-import DHT.Types (DHTEvent(..), InfoHash)
+import DHT.Types (DHTEvent(..))
 import Data.List.Split
 import Network.Socket hiding (recv, recvFrom)
 import System.Console.GetOpt
@@ -29,17 +30,33 @@ start conf = do
   _ <- putStrLn "Server is running"
   let outputChan = _dOutputChan dhtServer
   let collection = newCollection 3
-  handleDHTEvents outputChan collection
+  infohashChan <- newChan
+  forkIO $ stageFilter outputChan collection infohashChan
+  stageResolvePeers infohashChan dhtServer undefined
 
-handleDHTEvents :: Chan DHTOutputMessage -> Collection InfoHash -> IO ()
-handleDHTEvents chan collection = do
-  event <- readChan chan
+stageFilter ::
+     Chan DHTOutputMessage -> Collection InfoHash -> Chan InfoHash -> IO ()
+stageFilter chanIn collection chanOut = do
+  event <- readChan chanIn
   let (newCollection, newIH) =
         case event of
           DHTOutputEvent (DHTInfoHashDiscovered ih) ->
             filterThroughCollection collection ih
           _ -> (collection, Nothing)
-  handleDHTEvents chan collection
+  stageFilter chanIn collection chanOut
+
+stageResolvePeers ::
+     Chan InfoHash -> DHTServer -> Chan (InfoHash, [SockAddr]) -> IO ()
+stageResolvePeers chanIn dhtServer chanOut =
+  forever (readChan chanIn >>= forkIO . doResolve)
+  where
+    doResolve infoHash =
+      (,) infoHash <$> getPeers dhtServer infoHash >>= writeChan chanOut
+
+stageGetTorrentMetainfo :: Chan (InfoHash, [SockAddr]) -> Chan () -> IO ()
+stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . doGet)
+  where
+    doGet (ih, addrs) = ???
 
 resolveSeeds :: [(HostName, ServiceName)] -> IO [SockAddr]
 resolveSeeds = fmap (fmap addrAddress . join) . mapM resolveTuple
