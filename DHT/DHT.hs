@@ -5,7 +5,7 @@ module DHT.DHT
   , emptyDHT
   , handlePacket
   , handleCommand
-  , getGetTransactionType
+  , fnGetTransactionType
   , listDHTNodes
   , addDHTNode
   , addDHTPeer
@@ -13,7 +13,10 @@ module DHT.DHT
   , createTokenForSockAddr
   ) where
 
+import Control.Concurrent.Chan
+import Control.Monad.RWS.Lazy
 import DHT.Node
+import DHT.NodeID
 import DHT.Peer
 import DHT.PeerStore
 import DHT.Routing.Table
@@ -21,6 +24,7 @@ import DHT.TokenManager
 import DHT.Transactions
 import DHT.Types
 import Data.Maybe
+import Data.Time.Clock
 import Network.Socket
 import System.Random
 
@@ -39,13 +43,18 @@ instance Show DHT where
 data DHTCmd
   = DHTCmdAddHosts [SockAddr]
   | DHTCmdInit
+  | DHTCmdGetPeers InfoHash
+                   (Chan [SockAddr])
+  | DHTTransactionsCheck -- Check if transactions have timed-out or need retransmission
 
 data DHTOutput
   = DHTOutPacket SockAddr
                  Packet
   | DHTOutEvent DHTEvent
   | DHTOutNoNodesToInit
-  deriving (Eq, Show)
+  | DHTGetPeersResponse (Chan [SockAddr])
+                        [SockAddr]
+  deriving (Eq)
 
 emptyDHT :: NodeID -> StdGen -> DHT
 emptyDHT nodeID stdGen =
@@ -62,60 +71,149 @@ emptyDHT nodeID stdGen =
 --
 handlePacket :: DHT -> SockAddr -> Packet -> (DHT, [DHTOutput])
 handlePacket dht srcAddr (Packet transactionID message) =
-  case message of
-    PingQuery _ ->
-      ( dht
-      , [DHTOutPacket srcAddr $ Packet transactionID $ PingResponse (dhtID dht)])
-    FindNodeQuery _ targetID ->
-      (dht, [DHTOutPacket srcAddr $ Packet transactionID responseMessage])
-      where responseMessage = FindNodeResponse (dhtID dht) nodes
-            nodes = findClosests (table dht) targetID
-    GetPeersQuery _ ih -> (updatedDht, [outputPacket, outputEvent])
-      where updatedDht = dht {tokenManager = newTM, randomGen = newGen}
-            (token, newTM, newGen) =
-              newToken (tokenManager dht) (randomGen dht) srcAddr
-            packet =
-              Packet transactionID $ createPeersQueryResponse dht ih token
-            outputPacket = DHTOutPacket srcAddr packet
-            outputEvent = DHTOutEvent $ DHTInfoHashDiscovered ih
-    AnnouncePeerQuery _ ih port token ->
-      fromMaybe (dht, []) $ do
-        Peer _ peerAddr <- peerFromSockAddr srcAddr
-        let peer = Peer (fromIntegral port) peerAddr
-        updatedPeerStore <-
-          if checkToken (tokenManager dht) token srcAddr
-            then Just $ addPeer (peerStore dht) ih peer
-            else Nothing
-        let updatedDHT = dht {peerStore = updatedPeerStore}
-        let outputPacket =
-              DHTOutPacket srcAddr $
-              Packet transactionID $ AnnouncePeerResponse (dhtID dht)
-        let outputEvent = DHTOutEvent $ DHTPeerAdded ih peer
-        return (updatedDHT, [outputPacket, outputEvent])
-    PingResponse peerID ->
-      case nodeFromSockAddr peerID srcAddr of
-        Just node -> (dhtWithNode {transactions = newTransactions}, [event])
-          where dhtWithNode = saveNode dht node
-                newTransactions =
-                  removeTransaction (transactions dht) transactionID
-                event = DHTOutEvent $ DHTNodeAdded node
-        Nothing -> (dht, [])
-    FindNodeResponse _ nodes -> (dhtWithNewNodes, output ++ events)
-      where newNodes = filter isNewNode nodes
-            isNewNode (Node nodeID _ _) =
-              isNothing $ findNode (table dht) nodeID
-            closerNodes = filter isCloser nodes
-            isCloser node =
-              all
-                (\n -> (distanceTo (dhtID dht) node) < distanceTo (dhtID dht) n)
-                (findClosests (table dht) (dhtID dht))
-            dhtWithNewNodes = foldl saveNode dht newNodes
-            events = fmap (DHTOutEvent . DHTNodeAdded) newNodes
-            output =
-              fmap
-                (buildOutPacketForFindNodeQuery transactionID (dhtID dht))
-                closerNodes
-    _ -> (dht, [])
+  execRWS (m message) (srcAddr, transactionID) dht
+  where
+    m (PingQuery _) = handlePingQuery
+    m (FindNodeQuery _ targetID) = handleFindNodeQuery targetID
+    m (GetPeersQuery _ ih) = handleGetPeersQuery ih
+    m (AnnouncePeerQuery _ ih port token) =
+      handleAnnouncePeerQuery ih (fromIntegral port) token
+    m (PingResponse peerID) = handlePingResponse peerID
+    m (FindNodeResponse _ nodes) = handleFindNodeResponse nodes
+    m (GetPeersWithPeersResponse _ _ p) = handleGetPeersWithPeersResponse p
+    m (GetPeersWithNodesResponse _ _ n) = handleGetPeersWithNodesResponse n
+    m _ = return ()
+
+type DHTRWS = RWS (SockAddr, TransactionID) [DHTOutput] DHT
+
+handlePingQuery :: DHTRWS ()
+handlePingQuery = do
+  dht <- get
+  dhtMessageToOutput $ PingResponse (dhtID dht)
+
+handleFindNodeQuery :: NodeID -> DHTRWS ()
+handleFindNodeQuery targetID = do
+  dht <- get
+  let nodes = findClosests (table dht) targetID
+  let responseMessage = FindNodeResponse (dhtID dht) nodes
+  dhtMessageToOutput responseMessage
+
+handleGetPeersQuery :: InfoHash -> DHTRWS ()
+handleGetPeersQuery ih = do
+  token <- genNewToken
+  dht <- get
+  dhtMessageToOutput (createPeersQueryResponse dht ih token)
+  tell [DHTOutEvent $ DHTInfoHashDiscovered ih]
+
+handleAnnouncePeerQuery :: InfoHash -> PortNumber -> Token -> DHTRWS ()
+handleAnnouncePeerQuery ih port token = do
+  (srcAddr, _) <- ask
+  dht <- get
+  let maybePeer =
+        (\(Peer _ a) -> Peer (fromIntegral port) a) <$> peerFromSockAddr srcAddr
+  let tokenOK = checkToken (tokenManager dht) token srcAddr
+  case (maybePeer, tokenOK) of
+    (Just peer, True) -> do
+      updatePeerStore ih peer
+      dhtMessageToOutput $ AnnouncePeerResponse (dhtID dht)
+      tell [DHTOutEvent $ DHTPeerAdded ih peer]
+    _ -> return ()
+
+handlePingResponse :: NodeID -> DHTRWS ()
+handlePingResponse peerID = do
+  removeCurrentTransaction
+  saveCurrentNode peerID
+
+handleFindNodeResponse :: [Node] -> DHTRWS ()
+handleFindNodeResponse nodes = do
+  replyToCloserNodes nodes
+  saveNewNodes nodes
+
+handleGetPeersWithPeersResponse :: [Peer] -> DHTRWS ()
+handleGetPeersWithPeersResponse peers = do
+  dht <- get
+  (_, transactionID) <- ask
+  let newTransactions =
+        addPeersToTransactionGetPeers (transactions dht) transactionID peers
+  put $ dht {transactions = newTransactions}
+
+handleGetPeersWithNodesResponse :: [Node] -> DHTRWS ()
+handleGetPeersWithNodesResponse nodes = do
+  dht <- get
+  (_, transactionID) <- ask
+  let (newTransactions, nodesToContact) =
+        updateTransactionGetPeersWithNodes
+          (transactions dht)
+          transactionID
+          nodes
+  put $ dht {transactions = newTransactions}
+  tell $
+    fmap
+      (\(n, ih) -> buildOutPacketForGetPeersQuery transactionID (dhtID dht) ih n)
+      nodesToContact
+
+dhtMessageToOutput :: DHTMessage -> DHTRWS ()
+dhtMessageToOutput message = do
+  (srcAddr, tid) <- ask
+  tell [DHTOutPacket srcAddr $ Packet tid message]
+
+genNewToken :: DHTRWS Token
+genNewToken = do
+  (srcAddr, _) <- ask
+  dht <- get
+  let (token, newTM, newGen) =
+        newToken (tokenManager dht) (randomGen dht) srcAddr
+  put $ dht {tokenManager = newTM, randomGen = newGen}
+  return token
+
+updatePeerStore :: InfoHash -> Peer -> DHTRWS ()
+updatePeerStore ih peer = do
+  dht <- get
+  let pStore = addPeer (peerStore dht) ih peer
+  put $ dht {peerStore = pStore}
+
+-- Remove the transaction associated to the packet currently being handled
+removeCurrentTransaction :: DHTRWS ()
+removeCurrentTransaction = do
+  (_, transactionID) <- ask
+  dht <- get
+  put $ dht {transactions = removeTransaction (transactions dht) transactionID}
+
+-- Add the node send the packet currently being handled to the DHT
+saveCurrentNode :: NodeID -> DHTRWS ()
+saveCurrentNode peerID = do
+  (srcAddr, _) <- ask
+  case nodeFromSockAddr peerID srcAddr of
+    Just node -> do
+      dht <- get
+      put $ saveNode dht node
+      tell [DHTOutEvent $ DHTNodeAdded node]
+    Nothing -> return ()
+
+saveNewNodes :: [Node] -> DHTRWS ()
+saveNewNodes nodes = do
+  dht <- get
+  let isNewNode (Node nodeID _ _) = isNothing $ findNode (table dht) nodeID
+  let newNodes = filter isNewNode nodes
+  put $ foldl saveNode dht newNodes
+  tell $ (DHTOutEvent . DHTNodeAdded) <$> newNodes
+
+replyToCloserNodes :: [Node] -> DHTRWS ()
+replyToCloserNodes nodes = do
+  dht <- get
+  let isCloser node =
+        all
+          (\n -> (distanceTo (dhtID dht) node) < distanceTo (dhtID dht) n)
+          (findClosests (table dht) (dhtID dht))
+  let closerNodes = filter isCloser nodes
+  let myID = dhtID dht
+  replyToNodes (FindNodeQuery myID myID) closerNodes
+
+replyToNodes :: DHTMessage -> [Node] -> DHTRWS ()
+replyToNodes message nodes = do
+  (_, transactionID) <- ask
+  let packet = Packet transactionID message
+  tell $ (flip DHTOutPacket packet . nodeToSockAddr) <$> nodes
 
 createPeersQueryResponse :: DHT -> InfoHash -> Token -> DHTMessage
 createPeersQueryResponse dht ih token =
@@ -127,19 +225,40 @@ createPeersQueryResponse dht ih token =
 --
 -- Command handling --
 --
-handleCommand :: DHT -> DHTCmd -> (DHT, [DHTOutput])
-handleCommand dht (DHTCmdAddHosts hosts) = doPingHost dht hosts
-handleCommand dht DHTCmdInit =
+handleCommand :: DHT -> UTCTime -> DHTCmd -> (DHT, [DHTOutput])
+handleCommand dht _ (DHTCmdAddHosts hosts) = doPingHost dht hosts
+handleCommand dht _ DHTCmdInit =
   if null (listNodes $ table dht)
     then (dht, [DHTOutNoNodesToInit])
     else doFindNode dht (dhtID dht)
+handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
+  where
+    (newDHT, tid) =
+      createTransaction dht (newGetPeersTransaction ih nodes expire chan)
+    expire = addUTCTime (fromInteger 30) time
+    nodes = findClosests (table dht) (ihToNodeID ih)
+    output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) nodes
+handleCommand dht time DHTTransactionsCheck = (newDHT, output)
+  where
+    (newTransactions, expiredTransactions) =
+      getExpiredTransaction time (transactions dht)
+    output = expiredTransactions >>= toOutput
+    toOutput (TransactionGetPeers peers _ _ _ chan) =
+      [DHTGetPeersResponse chan (fmap peerToSockAddr peers)]
+    toOutput _ = []
+    newDHT = dht {transactions = newTransactions}
+
+buildOutPacketForGetPeersQuery ::
+     TransactionID -> NodeID -> InfoHash -> Node -> DHTOutput
+buildOutPacketForGetPeersQuery tid selfID ih node =
+  DHTOutPacket (nodeToSockAddr node) (Packet tid $ GetPeersQuery selfID ih)
 
 doPingHost :: DHT -> [SockAddr] -> (DHT, [DHTOutput])
 doPingHost dht hosts = (newDHT, fmap createOutput hosts)
   where
     createOutput sockAddr = DHTOutPacket sockAddr message
     message = Packet tid $ PingQuery (dhtID dht)
-    (newDHT, Transaction tid _) = createTransaction dht Ping
+    (newDHT, tid) = createTransaction dht TransactionPing
 
 doFindNode :: DHT -> NodeID -> (DHT, [DHTOutput])
 doFindNode dht nodeID = (newDHT, outputs)
@@ -150,13 +269,7 @@ doFindNode dht nodeID = (newDHT, outputs)
       DHTOutPacket (nodeToSockAddr node) (Packet transactionID message)
       where
         message = FindNodeQuery (dhtID dht) nodeID
-    (newDHT, Transaction transactionID _) = createTransaction dht FindNode
-
-buildOutPacketForFindNodeQuery :: TransactionID -> NodeID -> Node -> DHTOutput
-buildOutPacketForFindNodeQuery tid selfID node =
-  DHTOutPacket (nodeToSockAddr node) (Packet tid message)
-  where
-    message = FindNodeQuery selfID selfID
+    (newDHT, transactionID) = createTransaction dht TransactionFindNode
 
 -- Save the node on the table
 saveNode :: DHT -> Node -> DHT
@@ -164,19 +277,16 @@ saveNode dht node = dht {table = insertOrUpdate (table dht) node id nodeID}
   where
     Node nodeID _ _ = node
 
-createTransaction :: DHT -> TransactionType -> (DHT, Transaction)
-createTransaction dht ttype =
-  (dht {transactions = ts, randomGen = newGen}, transaction)
+createTransaction :: DHT -> Transaction -> (DHT, TransactionID)
+createTransaction dht transaction =
+  (dht {transactions = ts, randomGen = newGen}, tid)
   where
-    transaction = Transaction tid ttype
     (tid, newGen) = random (randomGen dht)
-    ts = addTransaction (transactions dht) transaction
+    ts = addTransaction (transactions dht) tid transaction
 
-getGetTransactionType :: DHT -> TransactionID -> Maybe TransactionType
-getGetTransactionType dht =
-  (fmap extractType) . getTransaction (transactions dht)
-  where
-    extractType (Transaction _ ttype) = ttype
+fnGetTransactionType :: DHT -> TransactionID -> Maybe TransactionType
+fnGetTransactionType dht =
+  fmap transactionType . getTransaction (transactions dht)
 
 --
 -- Expose some attributes of the DHT --

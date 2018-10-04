@@ -6,6 +6,7 @@ import DHT.Codec
 import DHT.Node
 import DHT.NodeID
 import DHT.Types
+import DHT.Transactions (TransactionID(..), TransactionType(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M

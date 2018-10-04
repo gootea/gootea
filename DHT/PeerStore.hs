@@ -6,7 +6,8 @@ module DHT.PeerStore
   , listAssocs
   ) where
 
-import DHT.Types
+import DHT.NodeID
+import DHT.Peer
 import qualified Data.Map.Strict as M
 
 data PeerStore =
