@@ -3,30 +3,16 @@ module DHT.Types
   , NodeID
   , DHTMessage(..)
   , DHTEvent(..)
-  , TransactionType(..)
-  , Transaction(..)
-  , TransactionID(..)
   , Token(..)
   , Peer(..)
-  , InfoHash(..)
-  , ihToNodeID
   ) where
 
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer
+import DHT.Transactions
 import qualified Data.ByteString as B
 import System.Random
-
-newtype InfoHash =
-  InfoHash B.ByteString
-  deriving (Eq, Show)
-
-instance Ord InfoHash where
-  compare (InfoHash a) (InfoHash b) = compare a b
-
-ihToNodeID :: InfoHash -> NodeID
-ihToNodeID (InfoHash ih) = NodeID ih
 
 data Packet =
   Packet TransactionID
@@ -63,30 +49,6 @@ data DHTEvent
                      [Peer]
   | DHTInfoHashDiscovered InfoHash
   deriving (Eq, Show)
-
-data TransactionType
-  = Ping
-  | FindNode
-  | GetPeers
-  | AnnouncePeer
-  deriving (Eq, Show)
-
-newtype TransactionID =
-  TransactionID B.ByteString
-  deriving (Eq, Ord, Show)
-
-instance Random TransactionID where
-  random g = (TransactionID $ B.pack bytes, finalGen)
-    where
-      (bytes, finalGen) = foldl addWord ([], g) [0 .. 10 :: Int]
-      addWord (acc, gen) _ = (newElem : acc, newGen)
-        where
-          (newElem, newGen) = random gen
-  randomR (_, _) g = random g
-
-data Transaction =
-  Transaction TransactionID
-              TransactionType
 
 newtype Token =
   Token B.ByteString

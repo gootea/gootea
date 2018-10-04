@@ -3,6 +3,8 @@ module DHT.NodeID
   , fromByteString
   , toByteString
   , XorDistance(..)
+  , InfoHash(..)
+  , ihToNodeID
   ) where
 
 import Data.Bits
@@ -59,3 +61,16 @@ instance Ord XorDistance
       cmp _ _ = EQ
             -- tables should have the same size, so we don't consider all cases
             -- but this should not be a problem
+
+--------------
+-- InfoHash --
+--------------
+newtype InfoHash =
+  InfoHash B.ByteString
+  deriving (Eq, Show)
+
+instance Ord InfoHash where
+  compare (InfoHash a) (InfoHash b) = compare a b
+
+ihToNodeID :: InfoHash -> NodeID
+ihToNodeID (InfoHash ih) = NodeID ih

@@ -2,13 +2,11 @@ module DHTSpec where
 
 import Control.Applicative (liftA2)
 
--- import Control.Monad
 import DHT.DHT
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer
-
--- import qualified DHT.Routing.Table as DRT
+import DHT.Transactions (TransactionID(..))
 import DHT.Types
 import qualified Data.ByteString as B
 
@@ -24,6 +22,7 @@ import System.Random
 -- import Test.HUnit hiding (Node)
 import Test.Hspec
 import Test.Hspec.QuickCheck
+import Test.Hspec.Expectations
 import Test.QuickCheck
 
 import Debug.Trace
@@ -33,6 +32,7 @@ spec = do
   describe "DHT" $ do
     prop "handle DHTCmdAddHosts" propDHTCmdAddHosts
     prop "handle DHTCmdInit" $ propDHTCmdInit
+    prop "handle DHTCmdGetPeers" $ propDHTCmdGetPeers
     prop "reply to PingQuery" $ propPingQuery
     prop "reply to FindNodeQuery" $ propFindNodeQuery
     prop "reply to GetPeersQuery" $ propGetPeersQuery
@@ -130,7 +130,7 @@ propDHTCmdAddHosts dht sockAddrs =
   all correctOutput outputs &&
   S.fromList outputSockAddrs == S.fromList sockAddrs
   where
-    (_, outputs) = handleCommand dht $ DHTCmdAddHosts sockAddrs
+    (_, outputs) = handleCommand dht undefined $ DHTCmdAddHosts sockAddrs
     correctOutput (DHTOutPacket _ (Packet _ (PingQuery nodeID))) =
       nodeID == dhtID dht
     correctOutput _ = False
@@ -140,7 +140,7 @@ propDHTCmdAddHosts dht sockAddrs =
 propDHTCmdInit :: DHTWithNodes -> Bool
 propDHTCmdInit (DHTWN dht) =
   let nodes = listDHTNodes dht
-      (_, outputs) = handleCommand dht DHTCmdInit
+      (_, outputs) = handleCommand dht undefined DHTCmdInit
    in if null nodes
         then outputs == [DHTOutNoNodesToInit]
         else all correctOutput outputs &&
@@ -154,6 +154,14 @@ propDHTCmdInit (DHTWN dht) =
     outputToHost (DHTOutPacket (SockAddrInet pn ha) _) = (pn, ha)
     outputToHost _ = undefined
     nodeToHost (Node _ pn ha) = (pn, ha)
+
+propDHTCmdGetPeers :: DHTWithNodes -> InfoHash -> Bool
+propDHTCmdGetPeers (DHTWN dht) ih = all isCorrectOutput outputs
+  where
+    (_, outputs) = handleCommand dht undefined (DHTCmdGetPeers ih undefined)
+    isCorrectOutput (DHTOutPacket _ (Packet _ (GetPeersQuery myID queriedIH))) =
+      myID == (dhtID dht) && queriedIH == ih
+    isCorrectOutput _ = False
 
 --------------------
 -- Test Packets   --
@@ -242,9 +250,9 @@ propAnnouncePeerQuery (DHTWT dht node token) infoHash transactionID port =
 -- Test FindNodeResponse by checking that the function handling
 -- FindNodeResponse sends a FindNodeQuery only if the node is closer to the
 -- dhtID than any other already known nodes.
-propFindNodeResponse :: DHTWithNodes -> Node -> TransactionID -> [Node] -> Bool
+propFindNodeResponse :: DHTWithNodes -> Node -> TransactionID -> [Node] -> Expectation
 propFindNodeResponse (DHTWN dht) node transactionID foundNodes =
-  S.fromList contactedHosts == S.fromList (nodeToHost <$> closerNodes)
+  contactedHosts `shouldMatchList` (nodeToHost <$> closerNodes)
   where
     initialNodes = listDHTNodes dht
     (_, outputs) =

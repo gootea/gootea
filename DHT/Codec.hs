@@ -7,9 +7,11 @@ import BEncode (BType(..))
 import Control.Applicative
 import Control.Monad
 import DHT.Node
+import DHT.NodeID
 import qualified DHT.NodeID as N
 import DHT.Peer
 import DHT.Types
+import DHT.Transactions (TransactionType(..), TransactionID(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M

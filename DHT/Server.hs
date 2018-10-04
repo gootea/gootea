@@ -2,6 +2,7 @@ module DHT.Server
   ( createServer
   , createServerWithID
   , runServer
+  , getPeers
   , DHTServer(..)
   , DHTInputMessage(..)
   , DHTOutputMessage(..)
@@ -10,11 +11,14 @@ module DHT.Server
 import qualified BEncode
 import Control.Concurrent
 import Control.Concurrent.Chan
+import Control.Monad
 import qualified DHT.Codec
 import DHT.DHT
 import DHT.Types
+import DHT.NodeID
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import Data.Time.Clock
 import Network.Socket hiding (recvFrom, sendTo)
 import Network.Socket.ByteString
 import System.IO.Error
@@ -82,7 +86,8 @@ mainLoop ::
   -> IO ()
 mainLoop inputChan sock outputChan dht = do
   message <- readChan inputChan
-  let (newDHT, dhtOutputs) = handleInputMessage dht message
+  time <- getCurrentTime
+  let (newDHT, dhtOutputs) = handleInputMessage dht time message
   _ <- sequence $ fmap (handleError . handleOutput) dhtOutputs
   mainLoop inputChan sock outputChan newDHT
   where
@@ -95,26 +100,26 @@ mainLoop inputChan sock outputChan dht = do
     handleOutput DHTOutNoNodesToInit =
       forkIO (scheduleMessage inputChan 5000 (MainInputCommand DHTCmdInit)) >>
       return ()
+    handleOutput (DHTGetPeersResponse chan peers) = writeChan chan peers
     encodePacket :: DHT.Types.Packet -> B.ByteString
     encodePacket = BL.toStrict . BEncode.encode . DHT.Codec.encode
 
-handleInputMessage :: DHT -> MainInputMessage -> (DHT, [DHTOutput])
-handleInputMessage dht (MainInputNetworkBytes srcAddr inputBytes) =
+handleInputMessage :: DHT -> UTCTime -> MainInputMessage -> (DHT, [DHTOutput])
+handleInputMessage dht _ (MainInputNetworkBytes srcAddr inputBytes) =
   case packet of
     Just p -> handlePacket dht srcAddr p
     Nothing -> (dht, [])
   where
     packet =
       (BEncode.decode inputBytes) >>=
-      (DHT.Codec.decode (getGetTransactionType dht))
-handleInputMessage dht (MainInputCommand command) = handleCommand dht command
+      (DHT.Codec.decode (fnGetTransactionType dht))
+handleInputMessage dht time (MainInputCommand command) =
+  handleCommand dht time command
 
 -- Forward message from inputChan to outpuChan and map then inbetween
 forwardChan :: (a -> b) -> Chan a -> Chan b -> IO ()
-forwardChan fn inputChan outputChan = do
-  input <- readChan inputChan
-  _ <- writeChan outputChan (fn input)
-  forwardChan fn inputChan outputChan
+forwardChan fn inputChan outputChan = forever $
+  readChan inputChan >>=  writeChan outputChan . fn
 
 -- Schedule a message to be sent later on a channel
 -- sleepDuration is a number of milliseconds
@@ -123,3 +128,10 @@ scheduleMessage chan sleepDuration message = do
   _ <- threadDelay $ sleepDuration * 1000
   _ <- writeChan chan message
   return ()
+
+getPeers :: DHTServer -> InfoHash -> IO [SockAddr]
+getPeers server infohash = do
+  chan <- newChan
+  let message = DHTInputCommand $ DHTCmdGetPeers infohash chan
+  writeChan (_dInputChan server) message
+  readChan chan

@@ -2,7 +2,8 @@ module DHTPeerStoreSpec where
 
 import Control.Applicative
 import DHT.PeerStore
-import DHT.Types
+import DHT.NodeID
+import DHT.Peer
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as M
 import Network.Socket
