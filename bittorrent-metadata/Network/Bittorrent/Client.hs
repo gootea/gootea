@@ -12,9 +12,8 @@ import Network.Bittorrent.Extension
 import Network.Socket hiding (recv, send)
 import Network.Socket.ByteString
 
-getMetainfo ::
-     SockAddr -> BS.ByteString -> BS.ByteString -> IO (Either String Metainfo)
-getMetainfo sockAddr infohash nodeID = do
+getMetainfo :: SockAddr -> BS.ByteString -> IO (Either String Metainfo)
+getMetainfo sockAddr infohash = do
   sock <- socket AF_INET Stream defaultProtocol
   connect sock sockAddr
   sendHandshake sock infohash nodeID
@@ -27,6 +26,8 @@ getMetainfo sockAddr infohash nodeID = do
     else ioError $
          userError
            "The metadata we got doesn't match with the requested infohash"
+
+nodeID = BS.pack $ replicate 20 42
 
 --------------------------
 -- BitTorrent Handshake --

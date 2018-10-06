@@ -3,13 +3,15 @@ module Main where
 import Collector.Collector
 import Control.Concurrent
 import Control.Monad
-import DHT.NodeID (InfoHash)
+import DHT.NodeID (InfoHash(..))
 import DHT.Server
 import DHT.Types (DHTEvent(..))
 import Data.List.Split
+import Data.Torrent (Metainfo)
 import Network.Socket hiding (recv, recvFrom)
 import System.Console.GetOpt
 import System.Environment
+import Network.Bittorrent.Client
 
 main :: IO ()
 main = do
@@ -53,10 +55,16 @@ stageResolvePeers chanIn dhtServer chanOut =
     doResolve infoHash =
       (,) infoHash <$> getPeers dhtServer infoHash >>= writeChan chanOut
 
-stageGetTorrentMetainfo :: Chan (InfoHash, [SockAddr]) -> Chan () -> IO ()
+stageGetTorrentMetainfo :: Chan (InfoHash, [SockAddr]) -> Chan Metainfo -> IO ()
 stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . doGet)
   where
-    doGet (ih, addrs) = ???
+    doGet :: (InfoHash, [SockAddr]) -> IO ()
+    doGet (InfoHash ih, firstAddr : otherAddr) = do
+      result <- getMetainfo firstAddr ih
+      case result of
+        Left _ -> doGet (InfoHash ih, otherAddr)
+        Right metainfo -> writeChan chanOut metainfo
+    doGet (_, []) = return ()
 
 resolveSeeds :: [(HostName, ServiceName)] -> IO [SockAddr]
 resolveSeeds = fmap (fmap addrAddress . join) . mapM resolveTuple
