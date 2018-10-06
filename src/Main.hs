@@ -12,6 +12,7 @@ import Network.Socket hiding (recv, recvFrom)
 import System.Console.GetOpt
 import System.Environment
 import Network.Bittorrent.Client
+import Store.Store
 
 main :: IO ()
 main = do
@@ -32,9 +33,15 @@ start conf = do
   _ <- putStrLn "Server is running"
   let outputChan = _dOutputChan dhtServer
   let collection = newCollection 3
+  store <- newStore "torrentNames.txt" "torrentFiles.txt"
   infohashChan <- newChan
+  ihWithPeersChan <- newChan
+  metainfoChan <- newChan
   forkIO $ stageFilter outputChan collection infohashChan
-  stageResolvePeers infohashChan dhtServer undefined
+  forkIO $ stageResolvePeers infohashChan dhtServer ihWithPeersChan
+  forkIO $ stageGetTorrentMetainfo ihWithPeersChan metainfoChan
+  stageSaveToStore store metainfoChan
+
 
 stageFilter ::
      Chan DHTOutputMessage -> Collection InfoHash -> Chan InfoHash -> IO ()
@@ -55,7 +62,7 @@ stageResolvePeers chanIn dhtServer chanOut =
     doResolve infoHash =
       (,) infoHash <$> getPeers dhtServer infoHash >>= writeChan chanOut
 
-stageGetTorrentMetainfo :: Chan (InfoHash, [SockAddr]) -> Chan Metainfo -> IO ()
+stageGetTorrentMetainfo :: Chan (InfoHash, [SockAddr]) -> Chan (InfoHash, Metainfo) -> IO ()
 stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . doGet)
   where
     doGet :: (InfoHash, [SockAddr]) -> IO ()
@@ -63,8 +70,13 @@ stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . d
       result <- getMetainfo firstAddr ih
       case result of
         Left _ -> doGet (InfoHash ih, otherAddr)
-        Right metainfo -> writeChan chanOut metainfo
+        Right metainfo -> writeChan chanOut (InfoHash ih, metainfo)
     doGet (ih, []) = putStrLn $ "Failed to get Metainfo for IH " ++ show ih
+
+stageSaveToStore :: Store -> Chan (InfoHash, Metainfo) -> IO ()
+stageSaveToStore store chan = forever $ do
+  (ih, metainfo) <- readChan chan
+  saveMetainfo store ih metainfo
 
 resolveSeeds :: [(HostName, ServiceName)] -> IO [SockAddr]
 resolveSeeds = fmap (fmap addrAddress . join) . mapM resolveTuple
