@@ -64,7 +64,7 @@ stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . d
       case result of
         Left _ -> doGet (InfoHash ih, otherAddr)
         Right metainfo -> writeChan chanOut metainfo
-    doGet (_, []) = return ()
+    doGet (ih, []) = putStrLn $ "Failed to get Metainfo for IH " ++ show ih
 
 resolveSeeds :: [(HostName, ServiceName)] -> IO [SockAddr]
 resolveSeeds = fmap (fmap addrAddress . join) . mapM resolveTuple
