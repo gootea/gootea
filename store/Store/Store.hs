@@ -1,5 +1,6 @@
 module Store.Store
-  ( newStore
+  ( Store
+  , newStore
   , saveMetainfo
   ) where
 
