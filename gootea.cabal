@@ -101,3 +101,10 @@ test-suite collectorspec
     main-is:          Spec.hs
     type:             exitcode-stdio-1.0
     ghc-options: -Werror=incomplete-patterns -Wall
+
+library store
+  exposed-modules:  Store.Store
+  build-depends:    base, containers, bytestring, bittorrent-metadata, dht
+  hs-source-dirs:   store
+  default-language: Haskell2010
+  ghc-options:      -Werror=incomplete-patterns -Wall
