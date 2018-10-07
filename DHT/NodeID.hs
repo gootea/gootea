@@ -6,8 +6,8 @@ module DHT.NodeID
   , InfoHash(..)
   , ihToNodeID
   , ToNodeID(toNodeID)
-  , isCloser
-  , closest
+  , isCloserByXD
+  , closestByXD
   ) where
 
 import Data.Bits
@@ -53,17 +53,17 @@ class ToNodeID a where
   toNodeID :: a -> NodeID
 
 -- True if `elem` is closer to `dst` than `ref`
-isCloser :: (ToNodeID a, ToNodeID b, ToNodeID c) => a -> b -> c -> Bool
-isCloser dst ref e =
+isCloserByXD :: (ToNodeID a, ToNodeID b, ToNodeID c) => a -> b -> c -> Bool
+isCloserByXD dst ref e =
   let dstID = toNodeID dst
    in XorDistance (toNodeID e) dstID < XorDistance (toNodeID ref) dstID
 
 -- Return the closest element to `dst`
-closest :: (ToNodeID a, ToNodeID b) => a ->  [b] -> Maybe b
-closest _ [] = Nothing
-closest dst (e: es) = Just $ foldl keepClosest e es
+closestByXD :: (ToNodeID a, ToNodeID b) => a ->  [b] -> Maybe b
+closestByXD _ [] = Nothing
+closestByXD dst (e: es) = Just $ foldl keepClosest e es
   where
-    keepClosest old new = if (isCloser dst old new) then new else old
+    keepClosest old new = if (isCloserByXD dst old new) then new else old
 
 --------------
 -- InfoHash --
