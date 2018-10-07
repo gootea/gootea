@@ -136,7 +136,7 @@ handleGetPeersWithPeersResponse peers = do
   dht <- get
   (_, transactionID) <- ask
   let newTransactions =
-        addPeersToTransactionGetPeers (transactions dht) transactionID peers
+        addPeersToTransactionGetPeers (transactions dht) transactionID (traceShow ("received peers" ++ show peers) peers)
   put $ dht {transactions = newTransactions}
 
 handleGetPeersWithNodesResponse :: [Node] -> DHTRWS ()
@@ -147,7 +147,7 @@ handleGetPeersWithNodesResponse nodes = do
         updateTransactionGetPeersWithNodes
           (transactions dht)
           transactionID
-          nodes
+          (traceShow ("received nodes to contact " ++ show nodes) nodes)
   put $ dht {transactions = newTransactions}
   tell $
     fmap
@@ -237,9 +237,9 @@ handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
   where
     (newDHT, tid) =
       createTransaction dht (newGetPeersTransaction ih nodes expire chan)
-    expire = addUTCTime (fromInteger 30) time
+    expire = addUTCTime (fromInteger 10) time
     nodes = findClosests (table dht) (ihToNodeID ih)
-    output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) nodes
+    output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) (traceShow ("nodes to contact " ++ show nodes) nodes)
 handleCommand dht time DHTTransactionsCheck = (traceShow "TransactionCheck" newDHT, output)
   where
     (newTransactions, expiredTransactions) =

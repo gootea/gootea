@@ -44,8 +44,8 @@ start conf = do
   forkIO $ stageFilter outputChan collection infohashChan
   forkIO $ stageResolvePeers infohashChan dhtServer ihWithPeersChan
   forkIO $ stageGetTorrentMetainfo ihWithPeersChan metainfoChan
-  forkIO (threadDelay (30 * 1000000) >> writeChan infohashChan ( InfoHash theFall))
-  forkIO ( threadDelay (32 * 1000000) >> writeChan infohashChan ( InfoHash chasingIce))
+  forkIO (threadDelay (4 * 1000000) >> writeChan infohashChan ( InfoHash theFall))
+  -- forkIO ( threadDelay (5 * 1000000) >> writeChan infohashChan ( InfoHash chasingIce))
   stageSaveToStore store metainfoChan
 
 

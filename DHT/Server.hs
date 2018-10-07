@@ -99,7 +99,7 @@ mainLoop inputChan sock outputChan dht = do
     handleOutput (DHTOutEvent event) =
       writeChan outputChan $ DHTOutputEvent event
     handleOutput DHTOutNoNodesToInit =
-      forkIO (scheduleMessage inputChan 5000 (MainInputCommand DHTCmdInit)) >>
+      forkIO (scheduleMessage inputChan 2000 (MainInputCommand DHTCmdInit)) >>
       return ()
     handleOutput (DHTGetPeersResponse chan peers) = writeChan chan peers
     encodePacket :: DHT.Types.Packet -> B.ByteString
