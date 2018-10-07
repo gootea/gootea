@@ -102,7 +102,7 @@ getExpiredTransaction ::
 getExpiredTransaction now (Transactions a) =
   (Transactions ongoing, M.elems expired)
   where
-    (ongoing, expired) = M.partition isExpired a
+    (expired, ongoing) = M.partition isExpired a
     isExpired (TransactionGetPeers _ _ _ expire _) = now > expire
     isExpired _ = False
 
