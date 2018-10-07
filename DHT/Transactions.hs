@@ -26,6 +26,8 @@ import Data.Tuple
 import Network.Socket
 import System.Random
 
+import Debug.Trace
+
 data TransactionType
   = Ping
   | FindNode
@@ -119,8 +121,13 @@ updateTransactionGetPeersWithNodes (Transactions a) tid nodes =
   where
     update :: Maybe Transaction -> ([(Node, InfoHash)], Maybe Transaction)
     update (Just (TransactionGetPeers peers oldNodes ih expire chan)) =
-      let newNodes = S.fromList nodes
-       in ( fmap (\n -> (n, ih)) $ S.toList $ S.difference newNodes oldNodes
+      let 
+        bestNodeYet :: Node 
+        bestNodeYet = undefined
+        newNodes = S.fromList nodes
+        nodesToContact = filter isCloser nodes
+        isCloser n = (distanceTo (ihToNodeID ih) n) < (distanceTo (ihToNodeID ih) bestNodeYet)
+       in ( fmap (\n -> (n, ih)) nodesToContact
           , Just $
             TransactionGetPeers peers (S.union oldNodes newNodes) ih expire chan)
     update t = ([], t)

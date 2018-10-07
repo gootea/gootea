@@ -5,6 +5,7 @@ module DHT.NodeID
   , XorDistance(..)
   , InfoHash(..)
   , ihToNodeID
+  , ToNodeID
   ) where
 
 import Data.Bits
@@ -74,3 +75,10 @@ instance Ord InfoHash where
 
 ihToNodeID :: InfoHash -> NodeID
 ihToNodeID (InfoHash ih) = NodeID ih
+
+--------------
+-- ToNodeID --
+--------------
+
+class ToNodeID a where
+  toNodeID :: a -> NodeID
