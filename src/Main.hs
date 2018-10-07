@@ -13,6 +13,7 @@ import System.Console.GetOpt
 import System.Environment
 import Network.Bittorrent.Client
 import Store.Store
+import qualified Data.ByteString as BS
 
 main :: IO ()
 main = do
@@ -21,6 +22,9 @@ main = do
   if (_cShowHelp configuration)
     then putStrLn getUsageInfo
     else start configuration
+
+theFall = BS.pack [75,156,230,86,88,210,217,195,181,188,118,42,8,20,216,228,155,59,2,142]
+chasingIce = BS.pack [254,10,72,13,167,152,42,193,185,141,126,15,9,91,5,223,56,175,46,130]
 
 start :: Configuration -> IO ()
 start conf = do
@@ -40,6 +44,8 @@ start conf = do
   forkIO $ stageFilter outputChan collection infohashChan
   forkIO $ stageResolvePeers infohashChan dhtServer ihWithPeersChan
   forkIO $ stageGetTorrentMetainfo ihWithPeersChan metainfoChan
+  forkIO (threadDelay (30 * 1000000) >> writeChan infohashChan ( InfoHash theFall))
+  forkIO ( threadDelay (32 * 1000000) >> writeChan infohashChan ( InfoHash chasingIce))
   stageSaveToStore store metainfoChan
 
 
@@ -57,8 +63,9 @@ stageFilter chanIn collection chanOut = do
 stageResolvePeers ::
      Chan InfoHash -> DHTServer -> Chan (InfoHash, [SockAddr]) -> IO ()
 stageResolvePeers chanIn dhtServer chanOut =
-  forever (readChan chanIn >>= forkIO . doResolve)
+  forever (readChan chanIn >>= log >>= forkIO . doResolve)
   where
+    log ih = putStrLn ("Received new IH " ++ show ih) >> return ih
     doResolve infoHash =
       (,) infoHash <$> getPeers dhtServer infoHash >>= writeChan chanOut
 
@@ -67,6 +74,7 @@ stageGetTorrentMetainfo chanIn chanOut = forever (readChan chanIn >>= forkIO . d
   where
     doGet :: (InfoHash, [SockAddr]) -> IO ()
     doGet (InfoHash ih, firstAddr : otherAddr) = do
+      putStrLn $ "Get Metainfo for " ++ show ih ++ " with peers " ++ show firstAddr
       result <- getMetainfo firstAddr ih
       case result of
         Left _ -> doGet (InfoHash ih, otherAddr)

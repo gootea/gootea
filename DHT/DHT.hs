@@ -28,6 +28,8 @@ import Data.Time.Clock
 import Network.Socket
 import System.Random
 
+import Debug.Trace
+
 data DHT = DHT
   { dhtID :: NodeID
   , table :: Table
@@ -238,7 +240,7 @@ handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
     expire = addUTCTime (fromInteger 30) time
     nodes = findClosests (table dht) (ihToNodeID ih)
     output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) nodes
-handleCommand dht time DHTTransactionsCheck = (newDHT, output)
+handleCommand dht time DHTTransactionsCheck = (traceShow "TransactionCheck" newDHT, output)
   where
     (newTransactions, expiredTransactions) =
       getExpiredTransaction time (transactions dht)
