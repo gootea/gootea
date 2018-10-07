@@ -1,6 +1,6 @@
 module DHT.Node
   ( Node(..)
-  , distanceTo
+  -- , distanceTo
   , toCompactNodeInfo
   , fromCompactNodeInfo
   , nodeToSockAddr
@@ -24,8 +24,8 @@ instance Eq Node where
 instance ToNodeID Node where
   toNodeID (Node i _ _) = i
 
-distanceTo :: NodeID -> Node -> XorDistance
-distanceTo ref (Node a _ _) = XorDistance ref a
+-- distanceTo :: NodeID -> Node -> XorDistance
+-- distanceTo ref (Node a _ _) = XorDistance ref a
 
 toCompactNodeInfo :: Node -> B.ByteString
 toCompactNodeInfo (Node (NodeID nId) port host) = B.pack bytes

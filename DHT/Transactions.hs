@@ -18,6 +18,7 @@ import Control.Concurrent.Chan
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer (Peer)
+import qualified DHT.Distance as D
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -124,8 +125,8 @@ updateTransactionGetPeersWithNodes (Transactions a) tid nodes =
     update (Just (TransactionGetPeers peers bestNodeYet ih expire chan)) =
       let 
         newNodes = S.fromList nodes
-        nodesToContact = filter (isCloserByXD ih bestNodeYet) nodes
-        newBestNode = fromMaybe bestNodeYet (toNodeID <$> closestByXD ih nodesToContact)
+        nodesToContact = filter (D.isCloser ih bestNodeYet) nodes
+        newBestNode = fromMaybe bestNodeYet (toNodeID <$> D.closest ih nodesToContact)
        in ( fmap (\n -> (n, ih)) nodesToContact
           , Just $
             TransactionGetPeers peers newBestNode ih expire chan)

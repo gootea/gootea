@@ -27,6 +27,7 @@ import Data.Maybe
 import Data.Time.Clock
 import Network.Socket
 import System.Random
+import qualified DHT.Distance as D
 
 import Debug.Trace
 
@@ -212,7 +213,7 @@ replyToCloserNodes nodes = do
   let closerNodes =
         case findClosests (table dht) (dhtID dht) of
           [] -> nodes
-          x:xs -> filter (isCloserByXD dht (fromMaybe x (closestByXD dht xs))) nodes
+          x:xs -> let closest = fromMaybe x (D.closest dht xs) in filter (D.isCloser dht closest) nodes
   let myID = dhtID dht
   replyToNodes (FindNodeQuery myID myID) closerNodes
 
@@ -245,7 +246,7 @@ handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
         dht
         (newGetPeersTransaction ih closestNodeID expire chan)
     expire = addUTCTime (fromInteger 10) time
-    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> closestByXD ih nodes)
+    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> D.closest ih nodes)
     nodes = findClosests (table dht) (ihToNodeID ih)
     output =
       fmap
