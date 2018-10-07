@@ -9,6 +9,7 @@ import DHT.NodeID
 import DHT.Peer
 import DHT.Transactions (TransactionID(..))
 import DHT.Types
+import qualified DHT.Distance as D
 import qualified Data.ByteString as B
 import Data.Maybe
 import qualified Data.Set as S
@@ -316,8 +317,7 @@ propFindNodeResponse (DHTWN dht) node transactionID foundNodes =
       Packet transactionID $ FindNodeResponse (nodeToNodeID node) foundNodes
     myID = dhtID dht
     closerNodes = filter isNodeCloser foundNodes
-    isNodeCloser node =
-      all (\n -> (distanceTo myID node) < (distanceTo myID n)) initialNodes
+    isNodeCloser node = all (D.isCloser myID node) initialNodes
     nodeToHost (Node _ pn ha) = (pn, ha)
     contactedHosts = outputs >>= maybeToList . outputToHost
     outputToHost (DHTOutPacket (SockAddrInet pn ha) _) = Just (pn, ha)
@@ -326,7 +326,7 @@ propFindNodeResponse (DHTWN dht) node transactionID foundNodes =
 --
 -- Helpers
 --
--- Return true is all node from the first list are closer to the target that
+-- Return true if all node from the first list are closer to the target that
 -- all nodes of the second list
 areNodesCloserTo :: NodeID -> [Node] -> [Node] -> Bool
 areNodesCloserTo _ [] [] = True
@@ -334,5 +334,5 @@ areNodesCloserTo _ [] _ = False
 areNodesCloserTo _ _ [] = True
 areNodesCloserTo target first second = maxFirstDistances <= minSecondDistances
   where
-    maxFirstDistances = maximum . (fmap $ distanceTo target) $ first
-    minSecondDistances = minimum . (fmap $ distanceTo target) $ second
+    maxFirstDistances = maximum . (fmap $ D.distanceTo target) $ first
+    minSecondDistances = minimum . (fmap $ D.distanceTo target) $ second

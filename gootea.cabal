@@ -85,7 +85,7 @@ test-suite dhtspec
                  , DHTCodecSpec
                  , RoutingTableSpec
                  , RoutingBucketSpec
-                 , DHTNodeIDSpec
+                 , DistanceSpec
                  , DHTNodeSpec
                  , DHTSpec
                  , DHTServerSpec
