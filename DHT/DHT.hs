@@ -42,6 +42,9 @@ data DHT = DHT
 instance Show DHT where
   show _ = "DHT"
 
+instance ToNodeID DHT where
+  toNodeID dht = dhtID dht
+
 data DHTCmd
   = DHTCmdAddHosts [SockAddr]
   | DHTCmdInit
@@ -136,7 +139,10 @@ handleGetPeersWithPeersResponse peers = do
   dht <- get
   (_, transactionID) <- ask
   let newTransactions =
-        addPeersToTransactionGetPeers (transactions dht) transactionID (traceShow ("received peers" ++ show peers) peers)
+        addPeersToTransactionGetPeers
+          (transactions dht)
+          transactionID
+          (traceShow ("received peers" ++ show peers) peers)
   put $ dht {transactions = newTransactions}
 
 handleGetPeersWithNodesResponse :: [Node] -> DHTRWS ()
@@ -203,11 +209,10 @@ saveNewNodes nodes = do
 replyToCloserNodes :: [Node] -> DHTRWS ()
 replyToCloserNodes nodes = do
   dht <- get
-  let isCloser node =
-        all
-          (\n -> (distanceTo (dhtID dht) node) < distanceTo (dhtID dht) n)
-          (findClosests (table dht) (dhtID dht))
-  let closerNodes = filter isCloser nodes
+  let closerNodes =
+        case findClosests (table dht) (dhtID dht) of
+          [] -> nodes
+          x:xs -> filter (isCloserByXD dht (fromMaybe x (closestByXD dht xs))) nodes
   let myID = dhtID dht
   replyToNodes (FindNodeQuery myID myID) closerNodes
 
@@ -236,12 +241,18 @@ handleCommand dht _ DHTCmdInit =
 handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
   where
     (newDHT, tid) =
-      createTransaction dht (newGetPeersTransaction ih closestNodeID expire chan)
+      createTransaction
+        dht
+        (newGetPeersTransaction ih closestNodeID expire chan)
     expire = addUTCTime (fromInteger 10) time
-    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> closest ih nodes)
+    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> closestByXD ih nodes)
     nodes = findClosests (table dht) (ihToNodeID ih)
-    output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) (traceShow ("nodes to contact " ++ show nodes) nodes)
-handleCommand dht time DHTTransactionsCheck = (traceShow "TransactionCheck" newDHT, output)
+    output =
+      fmap
+        (buildOutPacketForGetPeersQuery tid (dhtID dht) ih)
+        (traceShow ("nodes to contact " ++ show nodes) nodes)
+handleCommand dht time DHTTransactionsCheck =
+  (traceShow "TransactionCheck" newDHT, output)
   where
     (newTransactions, expiredTransactions) =
       getExpiredTransaction time (transactions dht)

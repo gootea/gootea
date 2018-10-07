@@ -124,8 +124,8 @@ updateTransactionGetPeersWithNodes (Transactions a) tid nodes =
     update (Just (TransactionGetPeers peers bestNodeYet ih expire chan)) =
       let 
         newNodes = S.fromList nodes
-        nodesToContact = filter (isCloser ih bestNodeYet) nodes
-        newBestNode = fromMaybe bestNodeYet (toNodeID <$> closest ih nodesToContact)
+        nodesToContact = filter (isCloserByXD ih bestNodeYet) nodes
+        newBestNode = fromMaybe bestNodeYet (toNodeID <$> closestByXD ih nodesToContact)
        in ( fmap (\n -> (n, ih)) nodesToContact
           , Just $
             TransactionGetPeers peers newBestNode ih expire chan)
