@@ -2,6 +2,7 @@ module DHTSpec where
 
 import Control.Applicative (liftA2)
 
+import Control.Monad.State.Lazy
 import DHT.DHT
 import DHT.Node
 import DHT.NodeID
@@ -9,20 +10,15 @@ import DHT.Peer
 import DHT.Transactions (TransactionID(..))
 import DHT.Types
 import qualified Data.ByteString as B
-
--- import Data.List ((\\), intersect)
 import Data.Maybe
 import qualified Data.Set as S
+import Data.Time.Calendar
+import Data.Time.Clock
 import Network.Socket
-
--- import Prelude hiding (insert)
--- import System.Exit
 import System.Random
-
--- import Test.HUnit hiding (Node)
 import Test.Hspec
-import Test.Hspec.QuickCheck
 import Test.Hspec.Expectations
+import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
 import Debug.Trace
@@ -37,6 +33,7 @@ spec = do
     prop "reply to FindNodeQuery" $ propFindNodeQuery
     prop "reply to GetPeersQuery" $ propGetPeersQuery
     prop "reply to AnnouncePeerQuery and save the peer" $ propAnnouncePeerQuery
+    prop "get peers when asked for" $ propDHTGetPeersScenario
     prop "correctly handle FindNodeResponse" $ propFindNodeResponse
 
 -- Unit tests
@@ -163,6 +160,64 @@ propDHTCmdGetPeers (DHTWN dht) ih = all isCorrectOutput outputs
       myID == (dhtID dht) && queriedIH == ih
     isCorrectOutput _ = False
 
+-----------------------------
+-- Full Get Peers scenario --
+-----------------------------
+data GetPeersScenario = GetPeersScenario
+  { _gpsDht :: DHT
+  , _gpsTime :: UTCTime
+  , _gpsIH :: InfoHash -- Queried InfoHash
+  , _gpsTransaction :: Maybe TransactionID
+  , _gpsPeers :: [SockAddr]
+  } deriving (Show)
+
+instance Arbitrary GetPeersScenario where
+  arbitrary = do
+    DHTWN dht <- arbitrary :: Gen DHTWithNodes
+    time <-
+      liftA2
+        UTCTime
+        (ModifiedJulianDay <$> arbitrary)
+        (fromInteger <$> arbitrary)
+    ih <- arbitrary
+    peers <- arbitrary
+    return $ GetPeersScenario dht time ih Nothing peers
+
+propDHTGetPeersScenario :: GetPeersScenario -> Expectation
+propDHTGetPeersScenario scenario =
+  if length (listDHTNodes (_gpsDht scenario)) == 0
+    then return ()
+    else (evalState state scenario) `shouldMatchList` (_gpsPeers scenario)
+  where
+    state = do
+      sendDHTCmdGetPeers
+      sendGetPeersReply
+      sendTransactionCheck
+    sendDHTCmdGetPeers = do
+      state <- get
+      let dht = _gpsDht state
+      let time = _gpsTime state
+      let command = DHTCmdGetPeers (_gpsIH state) undefined
+      let (newDht, outputs) = handleCommand dht time command
+      let (DHTOutPacket _ (Packet tid _)) = head outputs
+      put $ state {_gpsDht = newDht, _gpsTransaction = Just tid}
+    sendGetPeersReply = do
+      state <- get
+      let tid = fromJust $ _gpsTransaction state
+      let peers = catMaybes (peerFromSockAddr <$> _gpsPeers state)
+      let packet =
+            Packet tid (GetPeersWithPeersResponse undefined undefined peers)
+      let (newDht, outputs) = handlePacket (_gpsDht state) undefined packet
+      put $ state {_gpsDht = newDht}
+    sendTransactionCheck = do
+      state <- get
+      let newTime = addUTCTime (fromInteger 60) (_gpsTime state)
+      let (newDht, outputs) =
+            handleCommand (_gpsDht state) newTime DHTTransactionsCheck
+      put $ state {_gpsDht = newDht}
+      let (DHTGetPeersResponse _ peers) = head outputs
+      return peers
+
 --------------------
 -- Test Packets   --
 --------------------
@@ -250,7 +305,8 @@ propAnnouncePeerQuery (DHTWT dht node token) infoHash transactionID port =
 -- Test FindNodeResponse by checking that the function handling
 -- FindNodeResponse sends a FindNodeQuery only if the node is closer to the
 -- dhtID than any other already known nodes.
-propFindNodeResponse :: DHTWithNodes -> Node -> TransactionID -> [Node] -> Expectation
+propFindNodeResponse ::
+     DHTWithNodes -> Node -> TransactionID -> [Node] -> Expectation
 propFindNodeResponse (DHTWN dht) node transactionID foundNodes =
   contactedHosts `shouldMatchList` (nodeToHost <$> closerNodes)
   where
