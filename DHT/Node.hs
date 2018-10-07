@@ -21,6 +21,9 @@ data Node =
 instance Eq Node where
   (==) (Node a _ _) (Node b _ _) = a == b
 
+instance ToNodeID Node where
+  toNodeID (Node i _ _) = i
+
 distanceTo :: NodeID -> Node -> XorDistance
 distanceTo ref (Node a _ _) = XorDistance ref a
 
