@@ -236,8 +236,9 @@ handleCommand dht _ DHTCmdInit =
 handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
   where
     (newDHT, tid) =
-      createTransaction dht (newGetPeersTransaction ih nodes expire chan)
+      createTransaction dht (newGetPeersTransaction ih closestNodeID expire chan)
     expire = addUTCTime (fromInteger 10) time
+    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> closest ih nodes)
     nodes = findClosests (table dht) (ihToNodeID ih)
     output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) (traceShow ("nodes to contact " ++ show nodes) nodes)
 handleCommand dht time DHTTransactionsCheck = (traceShow "TransactionCheck" newDHT, output)
