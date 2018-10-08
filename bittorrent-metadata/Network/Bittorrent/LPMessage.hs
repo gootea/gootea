@@ -9,6 +9,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Network.Socket hiding (recv, send)
 import Network.Socket.ByteString
+import Data.Monoid
 
 sendLPMessage :: Socket -> BSL.ByteString -> IO Int
 sendLPMessage sock = send sock . createLPMessage
@@ -19,7 +20,8 @@ recvLPMessage sock fullbs =
     Just (mbs, restbs) -> return (mbs, restbs)
     Nothing -> do
       recvbs <- recv sock 2048
-      recvLPMessage sock (fullbs <> recvbs)
+      if (BS.length recvbs == 0) then ioError $ userError "Peer closed its connection"
+      else recvLPMessage sock (fullbs <> recvbs)
 
 extractLPMessage :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
 extractLPMessage fullbs = do

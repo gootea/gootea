@@ -1,10 +1,12 @@
 module Store.Store
-  ( newStore
+  ( Store
+  , newStore
   , saveMetainfo
   ) where
 
 import DHT.NodeID
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Data.Maybe
 import Data.Torrent
 import GHC.IO.Handle.FD
@@ -30,10 +32,12 @@ newStore namesFilename filesFilename = do
   return $ Store namesHandle filesHandle
 
 saveMetainfo :: Store -> InfoHash -> Metainfo -> IO ()
-saveMetainfo (Store nameHandle fileHandle) (InfoHash ih) metainfo = do
+saveMetainfo (Store nameHandle fileHandle) ih metainfo = do
   let nameLine = toLine $ fromMaybe BS.empty $ mName metainfo
   BS.hPutStr nameHandle nameLine
+  hFlush nameHandle
   let fileLines = toLine <$> listFiles metainfo
   BS.hPutStr fileHandle $ BS.concat fileLines
+  hFlush fileHandle
   where
-    toLine bs = BS.concat [ih, fieldSep, bs, lineSep]
+    toLine bs = BS.concat [BSC.pack . show $ ih, fieldSep, bs, lineSep]

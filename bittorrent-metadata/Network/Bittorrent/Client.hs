@@ -8,6 +8,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Torrent
 import Data.Word
+import Data.Monoid
 import Network.Bittorrent.Extension
 import Network.Socket hiding (recv, send)
 import Network.Socket.ByteString
