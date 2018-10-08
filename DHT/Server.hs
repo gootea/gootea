@@ -47,6 +47,7 @@ runServer (DHTServer inputChan outputChan dht initialHosts port) = do
   _ <- forkIO $ mainLoop mainInputChan mainSocket outputChan dht
   _ <- writeChan mainInputChan $ MainInputCommand $ DHTCmdAddHosts initialHosts
   _ <- writeChan mainInputChan $ MainInputCommand DHTCmdInit
+  _ <- forkIO $ sendPeriodicTransactionCheck mainInputChan
   socketLoop mainSocket mainInputChan
   where
     mapInputToMainInput (DHTInputCommand cmd) = MainInputCommand cmd
@@ -98,7 +99,7 @@ mainLoop inputChan sock outputChan dht = do
     handleOutput (DHTOutEvent event) =
       writeChan outputChan $ DHTOutputEvent event
     handleOutput DHTOutNoNodesToInit =
-      forkIO (scheduleMessage inputChan 5000 (MainInputCommand DHTCmdInit)) >>
+      forkIO (scheduleMessage inputChan 2000 (MainInputCommand DHTCmdInit)) >>
       return ()
     handleOutput (DHTGetPeersResponse chan peers) = writeChan chan peers
     encodePacket :: DHT.Types.Packet -> B.ByteString
@@ -128,6 +129,10 @@ scheduleMessage chan sleepDuration message = do
   _ <- threadDelay $ sleepDuration * 1000
   _ <- writeChan chan message
   return ()
+
+sendPeriodicTransactionCheck :: Chan MainInputMessage -> IO ()
+sendPeriodicTransactionCheck chan = forever $ threadDelay (15 * 1000 * 1000) >> writeChan chan (MainInputCommand DHTTransactionsCheck)
+
 
 getPeers :: DHTServer -> InfoHash -> IO [SockAddr]
 getPeers server infohash = do
