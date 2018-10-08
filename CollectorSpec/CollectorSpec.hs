@@ -6,8 +6,6 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-import Debug.Trace
-
 spec :: Spec
 spec = do
   describe "Collector" $ do
@@ -40,7 +38,7 @@ instance Arbitrary MinSeenCount where
 -------------------
 propFilterThroughCollection :: MinSeenCount -> Object -> Bool
 propFilterThroughCollection (MinSeenCount minSeenCount) obj =
-  (all id . traceShowId . fmap snd . repeatFilterThrough . newCollection)
+  (all id .  fmap snd . repeatFilterThrough . newCollection)
     minSeenCount
   where
     repeatFilterThrough :: Collection Object -> [(Collection Object, Bool)]
@@ -49,4 +47,4 @@ propFilterThroughCollection (MinSeenCount minSeenCount) obj =
     doFilterThrough (c, _) count =
       (isResponseCorrect count) <$> filterThroughCollection c obj
     isResponseCorrect count r =
-      (isJust (traceShowId r)) == (count == minSeenCount)
+      (isJust r) == (count == minSeenCount)
