@@ -11,6 +11,7 @@ module DHT.Routing.Table
 import Control.Monad
 import DHT.Node
 import DHT.NodeID
+import qualified DHT.Distance as D
 import qualified DHT.Routing.Bucket as DB
 import qualified Data.ByteString as B
 import Data.List (sortOn, uncons)
@@ -72,7 +73,7 @@ listNodesByDistance (Table _ buckets) targetID =
     merge (ha:ta) (hb:tb) = (listSorted [ha, hb]) ++ (merge ta tb)
     merge [] b = listSorted b
     merge a [] = listSorted a
-    listSorted = sortOn (distanceTo targetID) . join . fmap DB.listNodes
+    listSorted = sortOn (D.distanceTo targetID) . join . fmap DB.listNodes
 
 -- Split a list of buckets into three parts:
 -- - buckets before the nodeID match

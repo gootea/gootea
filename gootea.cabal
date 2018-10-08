@@ -66,6 +66,7 @@ library dht
                  , DHT.PeerStore
                  , DHT.TokenManager
                  , DHT.Peer
+                 , DHT.Distance
   build-depends: base, bytestring, containers, network, random, time, mtl
   default-language:    Haskell2010
   ghc-options: -Werror=incomplete-patterns -Wall
@@ -78,7 +79,7 @@ test-suite dhtspec
                  , DHTCodecSpec
                  , RoutingTableSpec
                  , RoutingBucketSpec
-                 , DHTNodeIDSpec
+                 , DistanceSpec
                  , DHTNodeSpec
                  , DHTSpec
                  , DHTServerSpec

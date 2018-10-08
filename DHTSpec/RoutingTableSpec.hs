@@ -3,7 +3,8 @@ module RoutingTableSpec where
 import BEncode
 import Control.Applicative (liftA2)
 import Control.Monad
-import DHT.Node (Node(..), distanceTo)
+import DHT.Node (Node(..))
+import qualified DHT.Distance as D
 import DHT.NodeID (NodeID(..))
 import DHT.Routing.Table
 import qualified Data.ByteString as B
@@ -858,4 +859,4 @@ propFindClosestNodes (Node tableID _ _) (Node targetID _ _) nodes =
     remainingNodes = (listNodes tableWithNodes) \\ foundNodes
     isCloser node = all (fnIsCloser node) remainingNodes
     fnIsCloser close far =
-      (distanceTo targetID close) <= (distanceTo targetID far)
+      (D.distanceTo targetID close) <= (D.distanceTo targetID far)

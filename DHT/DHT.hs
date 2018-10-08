@@ -27,6 +27,7 @@ import Data.Maybe
 import Data.Time.Clock
 import Network.Socket
 import System.Random
+import qualified DHT.Distance as D
 
 data DHT = DHT
   { dhtID :: NodeID
@@ -39,6 +40,9 @@ data DHT = DHT
 
 instance Show DHT where
   show _ = "DHT"
+
+instance ToNodeID DHT where
+  toNodeID dht = dhtID dht
 
 data DHTCmd
   = DHTCmdAddHosts [SockAddr]
@@ -201,11 +205,11 @@ saveNewNodes nodes = do
 replyToCloserNodes :: [Node] -> DHTRWS ()
 replyToCloserNodes nodes = do
   dht <- get
-  let isCloser node =
-        all
-          (\n -> (distanceTo (dhtID dht) node) < distanceTo (dhtID dht) n)
-          (findClosests (table dht) (dhtID dht))
-  let closerNodes = filter isCloser nodes
+  let closests = findClosests (table dht) (dhtID dht)
+  let closerNodes =
+        case D.closest dht closests of
+          Nothing -> nodes
+          Just closest -> filter (D.isCloser dht closest) nodes
   let myID = dhtID dht
   replyToNodes (FindNodeQuery myID myID) closerNodes
 
@@ -234,8 +238,11 @@ handleCommand dht _ DHTCmdInit =
 handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
   where
     (newDHT, tid) =
-      createTransaction dht (newGetPeersTransaction ih nodes expire chan)
-    expire = addUTCTime (fromInteger 30) time
+      createTransaction
+        dht
+        (newGetPeersTransaction ih closestNodeID expire chan)
+    expire = addUTCTime (fromInteger 10) time
+    closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> D.closest ih nodes)
     nodes = findClosests (table dht) (ihToNodeID ih)
     output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) nodes
 handleCommand dht time DHTTransactionsCheck = (newDHT, output)

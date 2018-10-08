@@ -18,11 +18,13 @@ import Control.Concurrent.Chan
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer (Peer)
+import qualified DHT.Distance as D
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.Time.Clock
 import Data.Tuple
+import Data.Maybe
 import Network.Socket
 import System.Random
 
@@ -53,7 +55,7 @@ data Transaction
   = TransactionPing
   | TransactionFindNode
   | TransactionGetPeers [Peer] -- List of collected peers
-                        (S.Set Node) -- Contacted nodes
+                        NodeID -- Best Node contacted yet
                         InfoHash
                         UTCTime -- Expiration time of this transaction
                         (Chan [SockAddr]) -- Chan for the response
@@ -66,9 +68,9 @@ transactionType (TransactionGetPeers _ _ _ _ _) = GetPeers
 transactionType TransactionAnnouncePeer = AnnouncePeer
 
 newGetPeersTransaction ::
-     InfoHash -> [Node] -> UTCTime -> Chan [SockAddr] -> Transaction
-newGetPeersTransaction ih nodes expire chan =
-  TransactionGetPeers [] (S.fromList nodes) ih expire chan
+     InfoHash -> NodeID -> UTCTime -> Chan [SockAddr] -> Transaction
+newGetPeersTransaction ih bestNode expire chan =
+  TransactionGetPeers [] bestNode ih expire chan
 
 -----------------------
 -- Transaction Store --
@@ -118,9 +120,12 @@ updateTransactionGetPeersWithNodes (Transactions a) tid nodes =
   (swap . fmap Transactions . M.alterF update tid) a
   where
     update :: Maybe Transaction -> ([(Node, InfoHash)], Maybe Transaction)
-    update (Just (TransactionGetPeers peers oldNodes ih expire chan)) =
-      let newNodes = S.fromList nodes
-       in ( fmap (\n -> (n, ih)) $ S.toList $ S.difference newNodes oldNodes
+    update (Just (TransactionGetPeers peers bestNodeYet ih expire chan)) =
+      let 
+        newNodes = S.fromList nodes
+        nodesToContact = filter (D.isCloser ih bestNodeYet) nodes
+        newBestNode = fromMaybe bestNodeYet (toNodeID <$> D.closest ih nodesToContact)
+       in ( fmap (\n -> (n, ih)) nodesToContact
           , Just $
-            TransactionGetPeers peers (S.union oldNodes newNodes) ih expire chan)
+            TransactionGetPeers peers newBestNode ih expire chan)
     update t = ([], t)
