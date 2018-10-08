@@ -5,8 +5,8 @@ import Control.Applicative
 import DHT.Codec
 import DHT.Node
 import DHT.NodeID
-import DHT.Types
 import DHT.Transactions (TransactionID(..), TransactionType(..))
+import DHT.Types
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M
@@ -272,7 +272,9 @@ testGetPeersWithPeersResponse = do
         (GetPeersWithPeersResponse
            nodeID
            (Token $ C.pack "token")
-           [Peer 42 $ tupleToHostAddress (127, 0, 0, 1)])
+           [ Peer 42 $ tupleToHostAddress (127, 0, 0, 1)
+           , Peer 6881 $ tupleToHostAddress (10, 11, 12, 13)
+           ])
     encoded =
       BDict $
       M.fromList
@@ -283,7 +285,11 @@ testGetPeersWithPeersResponse = do
             M.fromList
               [ (C.pack "id", BString $ C.pack nodeIDbytes)
               , (C.pack "token", BString $ C.pack "token")
-              , (C.pack "values", BString $ B.pack [127, 0, 0, 1, 0, 42])
+              , ( C.pack "values"
+                , BList
+                    [ BString $ B.pack [127, 0, 0, 1, 0, 42]
+                    , BString $ B.pack [10, 11, 12, 13, 26, 225]
+                    ])
               ])
         ]
 

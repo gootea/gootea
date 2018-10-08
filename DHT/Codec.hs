@@ -10,11 +10,12 @@ import DHT.Node
 import DHT.NodeID
 import qualified DHT.NodeID as N
 import DHT.Peer
+import DHT.Transactions (TransactionID(..), TransactionType(..))
 import DHT.Types
-import DHT.Transactions (TransactionType(..), TransactionID(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M
+import Data.Maybe
 
 -- Encode
 encode :: Packet -> BType
@@ -70,9 +71,9 @@ encodeNodes nodes = BString bytes
     bytes = foldl B.append B.empty (fmap toCompactNodeInfo nodes)
 
 encodePeers :: [Peer] -> BType
-encodePeers peers = BString bytes
-  where
-    bytes = foldl B.append B.empty (fmap toCompactPeerInfo peers)
+encodePeers peers =
+  let p = BString . toCompactPeerInfo <$> peers
+   in BList p
 
 keysForQuery :: String -> [(String, BType)] -> [(B.ByteString, BType)]
 keysForQuery name namedValues =
@@ -188,16 +189,10 @@ getNodes key m = getBString key m >>= cut >>= toNodes
     toNodes = traverse fromCompactNodeInfo
 
 getPeers :: [Char] -> M.Map B.ByteString BType -> Maybe [Peer]
-getPeers key m = getBString key m >>= cut >>= toPeers
+getPeers key m =
+  case M.lookup (C.pack key) m of
+    Just (BList peers) -> Just $ catMaybes $ convert <$> peers
+    _ -> Nothing
   where
-    cut bytes =
-      case compare len 6 of
-        EQ -> Just [bytes]
-        LT ->
-          if len == 0
-            then Just []
-            else Nothing
-        GT -> cut (B.drop 6 bytes) >>= (\l -> Just ((B.take 6 bytes) : l))
-      where
-        len = B.length bytes
-    toPeers = traverse fromCompactPeerInfo
+    convert (BString peer) = fromCompactPeerInfo peer
+    convert _ = Nothing
