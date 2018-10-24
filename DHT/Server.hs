@@ -48,6 +48,7 @@ runServer (DHTServer inputChan outputChan dht initialHosts port) = do
   _ <- writeChan mainInputChan $ MainInputCommand $ DHTCmdAddHosts initialHosts
   _ <- writeChan mainInputChan $ MainInputCommand DHTCmdInit
   _ <- forkIO $ sendPeriodicTransactionCheck mainInputChan
+  _ <- forkIO $ sendPeriodicRotateSeeds mainInputChan
   socketLoop mainSocket mainInputChan
   where
     mapInputToMainInput (DHTInputCommand cmd) = MainInputCommand cmd
@@ -133,6 +134,8 @@ scheduleMessage chan sleepDuration message = do
 sendPeriodicTransactionCheck :: Chan MainInputMessage -> IO ()
 sendPeriodicTransactionCheck chan = forever $ threadDelay (15 * 1000 * 1000) >> writeChan chan (MainInputCommand DHTTransactionsCheck)
 
+sendPeriodicRotateSeeds :: Chan MainInputMessage -> IO ()
+sendPeriodicRotateSeeds chan = forever $ threadDelay (15 * 60 * 1000 * 1000) >> writeChan chan (MainInputCommand DHTRotateSeeds)
 
 getPeers :: DHTServer -> InfoHash -> IO [SockAddr]
 getPeers server infohash = do

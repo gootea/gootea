@@ -15,6 +15,7 @@ module DHT.DHT
 
 import Control.Concurrent.Chan
 import Control.Monad.RWS.Lazy
+import qualified DHT.Distance as D
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer
@@ -27,7 +28,6 @@ import Data.Maybe
 import Data.Time.Clock
 import Network.Socket
 import System.Random
-import qualified DHT.Distance as D
 
 data DHT = DHT
   { dhtID :: NodeID
@@ -50,6 +50,7 @@ data DHTCmd
   | DHTCmdGetPeers InfoHash
                    (Chan [SockAddr])
   | DHTTransactionsCheck -- Check if transactions have timed-out or need retransmission
+  | DHTRotateSeeds -- Rotate the TokenManager Seeds
 
 data DHTOutput
   = DHTOutPacket SockAddr
@@ -62,13 +63,9 @@ data DHTOutput
 
 emptyDHT :: NodeID -> StdGen -> DHT
 emptyDHT nodeID stdGen =
-  DHT
-    nodeID
-    (emptyTable nodeID)
-    emptyTransactions
-    emptyPeerStore
-    newTokenManager
-    stdGen
+  DHT nodeID (emptyTable nodeID) emptyTransactions emptyPeerStore tm finalGen
+  where
+    (tm, finalGen) = newTokenManager stdGen
 
 --
 -- Packet handling --
@@ -165,9 +162,7 @@ genNewToken :: DHTRWS Token
 genNewToken = do
   (srcAddr, _) <- ask
   dht <- get
-  let (token, newTM, newGen) =
-        newToken (tokenManager dht) (randomGen dht) srcAddr
-  put $ dht {tokenManager = newTM, randomGen = newGen}
+  let token = newToken (tokenManager dht) srcAddr
   return token
 
 updatePeerStore :: InfoHash -> Peer -> DHTRWS ()
@@ -254,6 +249,10 @@ handleCommand dht time DHTTransactionsCheck = (newDHT, output)
       [DHTGetPeersResponse chan (fmap peerToSockAddr peers)]
     toOutput _ = []
     newDHT = dht {transactions = newTransactions}
+handleCommand dht time DHTRotateSeeds =
+  (dht {tokenManager = newTM, randomGen = newGen}, [])
+  where
+    (newTM, newGen) = rotateSeeds (tokenManager dht) (randomGen dht)
 
 buildOutPacketForGetPeersQuery ::
      TransactionID -> NodeID -> InfoHash -> Node -> DHTOutput
@@ -313,8 +312,5 @@ listDHTPeerAssocs :: DHT -> [(InfoHash, [Peer])]
 listDHTPeerAssocs dht = listAssocs (peerStore dht)
 
 -- Create a new token for the given node
-createTokenForSockAddr :: DHT -> SockAddr -> (DHT, Token)
-createTokenForSockAddr dht sockAddr = (newDHT, token)
-  where
-    (token, tm, _) = newToken (tokenManager dht) (randomGen dht) sockAddr
-    newDHT = dht {tokenManager = tm}
+createTokenForSockAddr :: DHT -> SockAddr -> Token
+createTokenForSockAddr dht sockAddr = newToken (tokenManager dht) sockAddr

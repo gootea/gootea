@@ -73,7 +73,7 @@ library dht
                  , DHT.TokenManager
                  , DHT.Peer
                  , DHT.Distance
-  build-depends: base, bytestring, containers, network, random, time, mtl
+  build-depends: base, bytestring, containers, network, random, time, mtl, cryptohash
   default-language:    Haskell2010
   ghc-options: -Werror=incomplete-patterns -Wall
 

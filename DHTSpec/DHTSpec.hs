@@ -117,8 +117,8 @@ instance Arbitrary DHTWithToken where
     dht <- arbitrary
     node <- arbitrary
     let sockAddr = nodeToSockAddr node
-    let (dhtwt, token) = createTokenForSockAddr dht sockAddr
-    return $ DHTWT dhtwt node token
+    let token = createTokenForSockAddr dht sockAddr
+    return $ DHTWT dht node token
 
 -------------------
 -- Test Commands --
