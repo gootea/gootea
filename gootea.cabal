@@ -94,6 +94,14 @@ test-suite dhtspec
     type:             exitcode-stdio-1.0
     ghc-options: -Werror=incomplete-patterns -Wall
 
+
+benchmark dht-bench
+    type: exitcode-stdio-1.0
+    main-is: DistanceBench.hs
+    hs-source-dirs: dht-bench
+    build-depends: base, criterion, bytestring, dht
+    default-language: Haskell2010
+
 library collector
   exposed-modules: Collector.Collector
   build-depends: base, containers
