@@ -38,14 +38,12 @@ data XorDistance =
 
 xdUnpack :: XorDistance -> [Word8]
 xdUnpack (XorDistance (NodeID a) (NodeID b)) =
-  zipWith xor (B.unpack a) (B.unpack b)
+  B.zipWith xor a b
 
 instance Eq XorDistance where
   (==) a b = (xdUnpack a) == (xdUnpack b)
 
-instance Ord XorDistance
-    -- compare :: XorDistance -> XorDistance -> Ordering
-                                                         where
+instance Ord XorDistance where
   compare a b = cmp (xdUnpack a) (xdUnpack b)
     where
       cmp (c:rc) (d:rd) =
