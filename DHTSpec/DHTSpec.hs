@@ -22,8 +22,6 @@ import Test.Hspec.Expectations
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-import Debug.Trace
-
 spec :: Spec
 spec = do
   describe "DHT" $ do

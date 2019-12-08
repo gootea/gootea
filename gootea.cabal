@@ -139,6 +139,28 @@ test-suite chordspec
     type:             exitcode-stdio-1.0
     ghc-options: -Werror=incomplete-patterns -Wall
 
+library fabius
+  exposed-modules: Fabius.Searcher
+                 , Fabius.Indexer
+                 , Fabius.SearchResults
+                 , Fabius.Key
+                 , Fabius.HDKMap
+                 , Fabius.Term
+                 , Fabius.InfoHash
+                 , Fabius.Torrent
+                 , Fabius.Query
+  build-depends: base, text, containers, bytestring, mtl
+  default-language: Haskell2010
+  ghc-options: -Werror=incomplete-patterns -Wall
+
+test-suite fabiusspec
+    build-depends:  fabius, base, HUnit, containers, QuickCheck, hspec, text
+    default-language: Haskell2010
+    hs-source-dirs:   FabiusSpec
+    other-modules: SearcherSpec, HDKMapSpec, IndexAndSearchSpec
+    main-is:          Spec.hs
+    type:             exitcode-stdio-1.0
+
 library store
   exposed-modules:  Store.Store
   build-depends:    base, containers, bytestring, bittorrent-metadata, dht
