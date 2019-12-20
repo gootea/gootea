@@ -18,6 +18,7 @@ import Control.Monad.State.Strict as State
 import Data.List
 import qualified Data.Map.Strict as M
 import Data.Maybe
+import Network.Socket (SockAddr(SockAddrUnix))
 
 -- Tests with multiple Peers
 data Cluster s =
@@ -37,7 +38,7 @@ newCluster ids =
     peers = fmap (\(i, s) -> (i, S.empty i s)) ids
 
 serviceToNode :: S.Service s -> Node
-serviceToNode = newNode . chordID
+serviceToNode n = newNode ( chordID n) (SockAddrUnix "cluster")
 
 fullyConnectAllPeers :: CMonad ()
 fullyConnectAllPeers =

@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Chord.FingerTable.Predecessors
   ( Predecessors
   , newPredecessors
@@ -7,6 +9,10 @@ module Chord.FingerTable.Predecessors
 
 import Chord.ID
 
+import GHC.Generics
+import Generic.Random
+import Test.QuickCheck
+
 -- | Data holding between O and 3 predecessors
 -- The ID is the reference of the FingerTable
 data Predecessors i
@@ -14,6 +20,10 @@ data Predecessors i
   | OnePredecessor ID i
   | TwoPredecessors ID i i
   | ThreePredecessors ID i i i
+  deriving (Eq, Show, Generic)
+
+instance Arbitrary a => Arbitrary (Predecessors a) where
+  arbitrary = genericArbitraryU
 
 -- | Create a new empty Predecessors object
 newPredecessors :: ID -> Predecessors n

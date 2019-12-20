@@ -39,9 +39,6 @@ spec = do
 -------------------------
 -- Arbitrary Instances --
 -------------------------
-instance Arbitrary InfoHash where
-  arbitrary = newInfoHash . B.pack <$> vectorOf 20 arbitrary
-
 instance Arbitrary NodeID where
   arbitrary = NodeID . B.pack <$> vectorOf 20 arbitrary
 

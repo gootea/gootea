@@ -6,6 +6,7 @@ import Test.Hspec
 import Chord.Finger
 import Chord.ID
 import Chord.Node
+import Network.Socket (SockAddr(SockAddrUnix))
 
 spec :: Spec
 spec = do
@@ -25,7 +26,7 @@ spec = do
 
 -- Helpers
 nodeFromID :: Integer -> Node
-nodeFromID = newNode . newID
+nodeFromID n = newNode (newID n) (SockAddrUnix "finger")
 
 -- Tests
 testIsInterestingNode :: (Integer, Integer) -> Integer -> Bool -> Assertion

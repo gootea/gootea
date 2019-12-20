@@ -35,9 +35,6 @@ testInsertTwoPeersAndFindThem = assertEqual "found peers" expected res
 instance Arbitrary Peer where
   arbitrary = liftA2 Peer (fmap fromInteger arbitrary) arbitrary
 
-instance Arbitrary InfoHash where
-  arbitrary = fmap (newInfoHash . B.pack) $ vectorOf 20 arbitrary
-
 propAddAndGetPeer :: [(InfoHash, [Peer])] -> Bool
 propAddAndGetPeer peersForIH = all isFound peersForIH
   where

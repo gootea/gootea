@@ -1,7 +1,10 @@
 module IDSpec where
 
+import qualified Data.ByteString as B
+import Data.Word
 import Test.HUnit
 import Test.Hspec
+import Test.Hspec.QuickCheck
 
 import Chord.ID
 
@@ -12,6 +15,14 @@ spec = do
   describe "fingerRange" $ do
     it "gives correct ranges" testFingerRange
     it "gives correct ranges (and loop)" testFingerRangeLoop
+  describe "idToByteString" $ do
+    prop "always return a ByteString of length 20" propIdToByteStringLength
+    it "create a proper ByteString for know values" testIdToByteString
+  describe "idFromByteString" $ do
+    it "create a proper ID from ByteString" testByteStringToID
+    it
+      "return Nothing for ByteString of bad length"
+      testIdFromByteStringForBadSize
 
 testIsBetweenIE :: Assertion
 testIsBetweenIE = do
@@ -71,3 +82,57 @@ testFingerRangeLoop =
            (newID 1461501637330902918203684832716283019655932542974, newID 6)
          (fingerRange base 4) @?= (newID 6, newID 22)
          (fingerRange base 5) @?= (newID 22, newID 54)
+
+propIdToByteStringLength :: ID -> Bool
+propIdToByteStringLength = (== 20) . B.length . idToByteString
+
+tupleIDAndByteString :: [(ID, B.ByteString)]
+tupleIDAndByteString =
+  fmap
+    (\(i, bs) -> (newID i, B.pack bs))
+    [ (0, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    , (1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+    , ( (maxID - 1)
+      , [ 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        , 255
+        ])
+    , ( 1099511627776
+      , [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
+    , ( 22300745198530623141535718272648361505980416
+      , [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    ]
+
+testIdToByteString :: Assertion
+testIdToByteString =
+  let t (i, b) = assertEqual (show i) b (idToByteString i)
+   in mapM_ t tupleIDAndByteString
+
+testByteStringToID :: Assertion
+testByteStringToID =
+  let t (i, b) = assertEqual (show i) (Just i) (idFromByteString b)
+   in mapM_ t tupleIDAndByteString
+
+testIdFromByteStringForBadSize :: Assertion
+testIdFromByteStringForBadSize =
+  let t bs = assertEqual (show bs) Nothing (idFromByteString $ B.pack bs)
+   in do t [0, 0]
+         t []
+         t [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] -- 21

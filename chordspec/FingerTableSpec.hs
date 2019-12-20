@@ -6,6 +6,7 @@ import Test.Hspec
 import Chord.FingerTable
 import Chord.ID
 import Chord.Node
+import Network.Socket (SockAddr(SockAddrUnix))
 
 spec :: Spec
 spec = do
@@ -18,7 +19,7 @@ spec = do
 
 -- Helpers
 nodeFromID :: Integer -> Node
-nodeFromID = newNode . newID
+nodeFromID n = newNode (newID n) (SockAddrUnix "fingertable")
 
 -- Tests
 testAddAndKeepNodes :: Assertion
