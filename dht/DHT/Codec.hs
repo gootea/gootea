@@ -16,6 +16,7 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M
 import Data.Maybe
+import Common.Models.InfoHash
 
 -- Encode
 encode :: Packet -> BType
@@ -31,15 +32,15 @@ messageKeys (FindNodeQuery nodeID targetID) =
   keysForQuery
     "find_node"
     [("id", encodeNodeID nodeID), ("target", encodeNodeID targetID)]
-messageKeys (GetPeersQuery nodeID (InfoHash infoHash)) =
+messageKeys (GetPeersQuery nodeID ih) =
   keysForQuery
     "get_peers"
-    [("id", encodeNodeID nodeID), ("info_hash", BString infoHash)]
-messageKeys (AnnouncePeerQuery nodeID (InfoHash infoHash) port (Token token)) =
+    [("id", encodeNodeID nodeID), ("info_hash", BString $ infoHashToByteString ih)]
+messageKeys (AnnouncePeerQuery nodeID ih port (Token token)) =
   keysForQuery
     "announce_peer"
     [ ("id", encodeNodeID nodeID)
-    , ("info_hash", BString infoHash)
+    , ("info_hash", BString $ infoHashToByteString ih)
     , ("port", BInt port)
     , ("token", BString token)
     ]
@@ -121,12 +122,12 @@ decodeQuery "get_peers" dict =
   liftA2
     GetPeersQuery
     (getNodeID "id" dict)
-    (fmap InfoHash $ getBString "info_hash" dict)
+    (fmap newInfoHash $ getBString "info_hash" dict)
 decodeQuery "announce_peer" dict =
   liftA3
     AnnouncePeerQuery
     (getNodeID "id" dict)
-    (fmap InfoHash $ getBString "info_hash" dict)
+    (fmap newInfoHash $ getBString "info_hash" dict)
     (getBInt "port" dict) <*>
   fmap Token (getBString "token" dict)
 decodeQuery _ _ = Nothing

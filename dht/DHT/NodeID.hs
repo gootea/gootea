@@ -3,7 +3,6 @@ module DHT.NodeID
   , fromByteString
   , toByteString
   , InfoHash(..)
-  , ihToNodeID
   , ToNodeID(toNodeID)
   ) where
 
@@ -12,6 +11,7 @@ import qualified Data.ByteString as B
 import Data.Word
 import Numeric
 import System.Random
+import Common.Models.InfoHash
 
 ------------
 -- NodeID --
@@ -50,24 +50,6 @@ fromByteString b =
 class ToNodeID a where
   toNodeID :: a -> NodeID
 
---------------
--- InfoHash --
---------------
-newtype InfoHash =
-  InfoHash B.ByteString
-  deriving (Eq)
-
-instance Show InfoHash where
-  show (InfoHash ih) = concat $ convertByte <$> (B.unpack ih)
-    where
-      convertByte :: Word8 -> String
-      convertByte b = showHex (shiftR b 4) "" ++ (showHex (b .&. 15) "")
-
-instance Ord InfoHash where
-  compare (InfoHash a) (InfoHash b) = compare a b
-
 instance ToNodeID InfoHash where
-  toNodeID (InfoHash ih) = NodeID ih
+  toNodeID = NodeID . infoHashToByteString
 
-ihToNodeID :: InfoHash -> NodeID
-ihToNodeID (InfoHash ih) = NodeID ih

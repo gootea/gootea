@@ -52,6 +52,7 @@ library dht
   hs-source-dirs:   dht
   build-depends:    base
                   , bytestring
+                  , common
                   , containers
                   , cryptohash
                   , mtl
@@ -158,6 +159,7 @@ test-suite dhtspec
                     , HUnit
                     , QuickCheck
                     , bytestring
+                    , common
                     , containers
                     , dht
                     , hspec

@@ -219,7 +219,7 @@ createPeersQueryResponse dht ih token =
   case getPeers (peerStore dht) ih of
     Just peers -> GetPeersWithPeersResponse (dhtID dht) token peers
     Nothing -> GetPeersWithNodesResponse (dhtID dht) token nodes
-      where nodes = findClosests (table dht) (ihToNodeID ih)
+      where nodes = findClosests (table dht) (toNodeID ih)
 
 --
 -- Command handling --
@@ -238,7 +238,7 @@ handleCommand dht time (DHTCmdGetPeers ih chan) = (newDHT, output)
         (newGetPeersTransaction ih closestNodeID expire chan)
     expire = addUTCTime (fromInteger 10) time
     closestNodeID = fromMaybe (dhtID dht) (toNodeID <$> D.closest ih nodes)
-    nodes = findClosests (table dht) (ihToNodeID ih)
+    nodes = findClosests (table dht) (toNodeID ih)
     output = fmap (buildOutPacketForGetPeersQuery tid (dhtID dht) ih) nodes
 handleCommand dht time DHTTransactionsCheck = (newDHT, output)
   where
