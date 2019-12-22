@@ -12,6 +12,7 @@ import Chord.Node
 import qualified Chord.Service as S
 import Chord.Store
 import Cluster.InMemoryStore
+import Common.Models.InfoHash
 
 import Control.Monad.State.Strict as State
 import Data.List
@@ -19,26 +20,26 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 
 -- Tests with multiple Peers
-data Cluster s v =
+data Cluster s =
   Cluster
-    { peers :: M.Map ID (S.Service s v)
-    , outputQueue :: [(Node, S.Output v)]
-    , replyQueue :: [(ID, [v])]
+    { peers :: M.Map ID (S.Service s)
+    , outputQueue :: [(Node, S.Output)]
+    , replyQueue :: [(ID, [InfoHash])]
     }
 
-type CMonad v a = State.State (Cluster InMemoryStore v) a
+type CMonad a = State.State (Cluster InMemoryStore) a
 
 -- | Create a new Cluster
-newCluster :: Store s => [(ID, s v)] -> Cluster s v
+newCluster :: Store s => [(ID, s InfoHash)] -> Cluster s
 newCluster ids =
   Cluster {peers = M.fromList peers, outputQueue = [], replyQueue = []}
   where
     peers = fmap (\(i, s) -> (i, S.empty i s)) ids
 
-serviceToNode :: S.Service s v -> Node
+serviceToNode :: S.Service s -> Node
 serviceToNode = newNode . chordID
 
-fullyConnectAllPeers :: CMonad v ()
+fullyConnectAllPeers :: CMonad ()
 fullyConnectAllPeers =
   let addNode (svc, node) = actOnPeer (chordID svc) (\s -> S.addNode s node)
    in do allPeers <- fmap M.elems $ fmap peers $ State.get
@@ -52,8 +53,8 @@ fullyConnectAllPeers =
 -- | Execute a function on the peer matching the given ID
 actOnPeer ::
      ID
-  -> (S.Service InMemoryStore v -> (S.Service InMemoryStore v, [S.Output v]))
-  -> CMonad v ()
+  -> (S.Service InMemoryStore -> (S.Service InMemoryStore, [S.Output]))
+  -> CMonad ()
 actOnPeer target fun = do
   cluster <- State.get
   let peersMap = peers cluster
@@ -67,12 +68,12 @@ actOnPeer target fun = do
       State.put $ cluster {peers = newPeers, outputQueue = newOutputQueue}
   processOutputQueue
 
-processChordMessage :: Node -> Node -> ChordMessage v -> CMonad v ()
+processChordMessage :: Node -> Node -> ChordMessage -> CMonad ()
 processChordMessage recipient emitter msg = do
   let nid = chordID recipient
   actOnPeer nid (\svc -> S.handleChordMessage svc emitter msg)
 
-dequeueFirstOutput :: CMonad v (Maybe (Node, S.Output v))
+dequeueFirstOutput :: CMonad (Maybe (Node, S.Output))
 dequeueFirstOutput =
   State.state $ \cluster ->
     case uncons $ outputQueue cluster of
@@ -80,7 +81,7 @@ dequeueFirstOutput =
       Nothing -> (Nothing, cluster)
 
 -- | Process all messages that are in `outputQueue`
-processOutputQueue :: CMonad v ()
+processOutputQueue :: CMonad ()
 processOutputQueue = do
   maybeMsg <- dequeueFirstOutput
   case maybeMsg of
@@ -90,6 +91,6 @@ processOutputQueue = do
     Just (_, S.GetReply k v) -> queueReply k v
     Nothing -> return ()
 
-queueReply :: ID -> [v] -> CMonad v ()
+queueReply :: ID -> [InfoHash] -> CMonad ()
 queueReply k v =
   State.state $ \s -> ((), s {replyQueue = (k, v) : (replyQueue s)})

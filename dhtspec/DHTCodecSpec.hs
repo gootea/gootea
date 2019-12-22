@@ -1,6 +1,7 @@
 module DHTCodecSpec where
 
 import BEncode (BType(..))
+import Common.Models.InfoHash
 import Control.Applicative
 import DHT.Codec
 import DHT.Node
@@ -102,7 +103,7 @@ testGetPeersQuery = do
     packet =
       Packet
         (TransactionID $ C.pack "transactionID")
-        (GetPeersQuery nodeID (InfoHash $ C.pack "infohash"))
+        (GetPeersQuery nodeID (newInfoHash $ C.pack "infohash"))
     encoded =
       BDict $
       M.fromList
@@ -133,7 +134,7 @@ testAnnouncePeerQuery = do
         (TransactionID $ C.pack "transactionID")
         (AnnouncePeerQuery
            nodeID
-           (InfoHash $ C.pack "infohash")
+           (newInfoHash $ C.pack "infohash")
            6881
            (Token $ C.pack "token"))
     encoded =
@@ -401,9 +402,13 @@ instance Arbitrary Packet where
       genPingQuery = fmap PingQuery arbitrary
       genFindNodeQuery = liftA2 FindNodeQuery arbitrary arbitrary
       genGetPeersQuery =
-        liftA2 GetPeersQuery arbitrary (fmap InfoHash genByteString)
+        liftA2 GetPeersQuery arbitrary (fmap newInfoHash genByteString)
       genAnnouncePeerQuery =
-        liftA3 AnnouncePeerQuery arbitrary (fmap InfoHash arbitrary) arbitrary <*>
+        liftA3
+          AnnouncePeerQuery
+          arbitrary
+          (fmap newInfoHash arbitrary)
+          arbitrary <*>
         arbitrary
       genPingResponse = fmap PingResponse arbitrary
       genFindNodeResponse = liftA2 FindNodeResponse arbitrary (listOf arbitrary)

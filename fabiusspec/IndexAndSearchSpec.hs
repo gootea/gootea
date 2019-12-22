@@ -12,7 +12,7 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
 import qualified Fabius.Indexer as I
-import Fabius.InfoHash
+import Common.Models.InfoHash
 import Fabius.Key
 import Fabius.Searcher
 import Fabius.Term

@@ -2,8 +2,8 @@ module DistanceSpec where
 
 import Control.Applicative (liftA2)
 import Control.Monad
-import DHT.NodeID
 import DHT.Distance
+import DHT.NodeID
 import qualified Data.ByteString as B
 import Data.List ((\\))
 import Prelude hiding (insert)

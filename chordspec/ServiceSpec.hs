@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module ServiceSpec where
 
 import Test.HUnit
@@ -8,6 +10,7 @@ import Chord.ID
 import Chord.Node
 import qualified Chord.Service as S
 import Chord.Store
+import Common.Models.InfoHash
 
 import Cluster.Cluster
 import Cluster.InMemoryStore
@@ -33,7 +36,7 @@ testAddGetWithEmptyFingerTable :: Assertion
 testAddGetWithEmptyFingerTable = do
   let selfID = newID 42
   let valueID = newID 84
-  let value = "valueForTest"
+  let value = newInfoHash "valueForTest"
   let emptySvc = S.empty selfID newStore
   let (svcWithValue, addOutput) = S.add emptySvc valueID value
   assertBool
@@ -56,7 +59,7 @@ testAddGetWithMultiplePeers =
         [0 .. numberOfPeers]
       cluster = newCluster ids
       key = newID 730750818665451459101842416358141509827966271488
-      value = "value"
+      value = newInfoHash "value"
       transformation = do
         fullyConnectAllPeers
         actOnPeer (fst $ head ids) (\s -> S.add s key value)

@@ -6,7 +6,7 @@ module Fabius.Torrent
   ) where
 
 import qualified Data.Text as T
-import Fabius.InfoHash
+import Common.Models.InfoHash
 
 data Torrent =
   Torrent

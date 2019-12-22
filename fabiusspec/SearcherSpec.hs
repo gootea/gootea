@@ -11,8 +11,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-import Fabius.InfoHash
-import Fabius.InfoHash
+import Common.Models.InfoHash
 import Fabius.Key
 import Fabius.Searcher
 import Fabius.Term

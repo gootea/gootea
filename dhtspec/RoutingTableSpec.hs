@@ -3,8 +3,8 @@ module RoutingTableSpec where
 import BEncode
 import Control.Applicative (liftA2)
 import Control.Monad
-import DHT.Node (Node(..))
 import qualified DHT.Distance as D
+import DHT.Node (Node(..))
 import DHT.NodeID (NodeID(..))
 import DHT.Routing.Table
 import qualified Data.ByteString as B

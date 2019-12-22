@@ -2,14 +2,15 @@ module DHTSpec where
 
 import Control.Applicative (liftA2)
 
+import Common.Models.InfoHash
 import Control.Monad.State.Lazy
 import DHT.DHT
+import qualified DHT.Distance as D
 import DHT.Node
 import DHT.NodeID
 import DHT.Peer
 import DHT.Transactions (TransactionID(..))
 import DHT.Types
-import qualified DHT.Distance as D
 import qualified Data.ByteString as B
 import Data.Maybe
 import qualified Data.Set as S
@@ -35,14 +36,11 @@ spec = do
     prop "get peers when asked for" $ propDHTGetPeersScenario
     prop "correctly handle FindNodeResponse" $ propFindNodeResponse
 
--- Unit tests
--- nodeID = NodeID (B.pack $ replicate 20 97)
--- transactionID = TransactionID $ B.pack [1, 2, 3, 4]
 -------------------------
 -- Arbitrary Instances --
 -------------------------
 instance Arbitrary InfoHash where
-  arbitrary = InfoHash . B.pack <$> vectorOf 20 arbitrary
+  arbitrary = newInfoHash . B.pack <$> vectorOf 20 arbitrary
 
 instance Arbitrary NodeID where
   arbitrary = NodeID . B.pack <$> vectorOf 20 arbitrary
@@ -82,9 +80,7 @@ instance Arbitrary DHTWithNodes where
 
 -- DHT prepopulated with nodes
 data DHTWithPeers =
-  DHTWP DHT
-        InfoHash
-        [Peer]
+  DHTWP DHT InfoHash [Peer]
 
 instance Show DHTWithPeers where
   show (DHTWP dht _ _) = "DHTWithPeers: " ++ (show $ listDHTPeerAssocs dht)
@@ -102,9 +98,7 @@ instance Arbitrary DHTWithPeers where
 
 -- DHT prepopulated with a valid Token for a given Node
 data DHTWithToken =
-  DHTWT DHT
-        Node
-        Token
+  DHTWT DHT Node Token
 
 instance Show DHTWithToken where
   show (DHTWT _ n t) =
@@ -162,13 +156,15 @@ propDHTCmdGetPeers (DHTWN dht) ih = all isCorrectOutput outputs
 -----------------------------
 -- Full Get Peers scenario --
 -----------------------------
-data GetPeersScenario = GetPeersScenario
-  { _gpsDht :: DHT
-  , _gpsTime :: UTCTime
-  , _gpsIH :: InfoHash -- Queried InfoHash
-  , _gpsTransaction :: Maybe TransactionID
-  , _gpsPeers :: [SockAddr]
-  } deriving (Show)
+data GetPeersScenario =
+  GetPeersScenario
+    { _gpsDht :: DHT
+    , _gpsTime :: UTCTime
+    , _gpsIH :: InfoHash -- Queried InfoHash
+    , _gpsTransaction :: Maybe TransactionID
+    , _gpsPeers :: [SockAddr]
+    }
+  deriving (Show)
 
 instance Arbitrary GetPeersScenario where
   arbitrary = do

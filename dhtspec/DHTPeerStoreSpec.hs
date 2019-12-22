@@ -1,9 +1,10 @@
 module DHTPeerStoreSpec where
 
+import Common.Models.InfoHash
 import Control.Applicative
-import DHT.PeerStore
 import DHT.NodeID
 import DHT.Peer
+import DHT.PeerStore
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as M
 import Network.Socket
@@ -27,7 +28,7 @@ testInsertTwoPeersAndFindThem = assertEqual "found peers" expected res
     peer1 = Peer 42 $ tupleToHostAddress (42, 42, 42, 42)
     peer2 = Peer 6881 $ tupleToHostAddress (10, 10, 2, 1)
     ih =
-      InfoHash $
+      newInfoHash $
       B.pack [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 
 -- Property tests
@@ -35,7 +36,7 @@ instance Arbitrary Peer where
   arbitrary = liftA2 Peer (fmap fromInteger arbitrary) arbitrary
 
 instance Arbitrary InfoHash where
-  arbitrary = fmap (InfoHash . B.pack) $ vectorOf 20 arbitrary
+  arbitrary = fmap (newInfoHash . B.pack) $ vectorOf 20 arbitrary
 
 propAddAndGetPeer :: [(InfoHash, [Peer])] -> Bool
 propAddAndGetPeer peersForIH = all isFound peersForIH

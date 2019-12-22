@@ -10,6 +10,13 @@ homepage:           https://github.com/gootea/gootea
 build-type:         Simple
 extra-source-files: ChangeLog.md
 
+library common
+  exposed-modules:  Common.Models.InfoHash
+  hs-source-dirs:   common
+  build-depends:    base, bytestring
+  default-language: Haskell2010
+  ghc-options:      -Wall -Werror=incomplete-patterns
+
 library bittorrent-metadata
   exposed-modules:  Data.Torrent
                     Network.Bittorrent.Client
@@ -45,6 +52,7 @@ library dht
   hs-source-dirs:   dht
   build-depends:    base
                   , bytestring
+                  , common
                   , containers
                   , cryptohash
                   , mtl
@@ -73,14 +81,13 @@ library chord
                     Chord.Service
                     Chord.Store
   hs-source-dirs:   chord
-  build-depends:    base, bytestring, containers, mtl, network, text
+  build-depends:    base, bytestring, common, containers, mtl, network, text
   default-language: Haskell2010
   ghc-options:      -Wall -Werror=incomplete-patterns
 
 library fabius
   exposed-modules:  Fabius.HDKMap
                     Fabius.Indexer
-                    Fabius.InfoHash
                     Fabius.Key
                     Fabius.Query
                     Fabius.SearchResults
@@ -88,7 +95,7 @@ library fabius
                     Fabius.Term
                     Fabius.Torrent
   hs-source-dirs:   fabius
-  build-depends:    base, bytestring, containers, mtl, text
+  build-depends:    base, bytestring, common, containers, mtl, text
   default-language: Haskell2010
   ghc-options:      -Wall -Werror=incomplete-patterns
 
@@ -152,6 +159,7 @@ test-suite dhtspec
                     , HUnit
                     , QuickCheck
                     , bytestring
+                    , common
                     , containers
                     , dht
                     , hspec
@@ -195,6 +203,7 @@ test-suite chordspec
                     , HUnit
                     , QuickCheck
                     , chord
+                    , common
                     , containers
                     , hspec
                     , hspec-expectations
@@ -213,6 +222,7 @@ test-suite fabiusspec
   build-depends:      base
                     , HUnit
                     , QuickCheck
+                    , common
                     , containers
                     , fabius
                     , hspec
