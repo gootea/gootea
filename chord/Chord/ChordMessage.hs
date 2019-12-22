@@ -4,11 +4,12 @@ module Chord.ChordMessage
 
 import Chord.ID
 import Chord.Node
+import Common.Models.InfoHash
 
 -- | Messages used to communicate between nodes
-data ChordMessage v
+data ChordMessage
   = FingerTableQuery
   | FingerTableResponse [Node]
   | GetValuesQuery ID
-  | GetValuesResponse ID [v]
-  | AddValueQuery ID v
+  | GetValuesResponse ID [InfoHash]
+  | AddValueQuery ID InfoHash

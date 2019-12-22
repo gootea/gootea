@@ -80,7 +80,7 @@ library chord
                     Chord.Service
                     Chord.Store
   hs-source-dirs:   chord
-  build-depends:    base, bytestring, containers, mtl, network, text
+  build-depends:    base, bytestring, common, containers, mtl, network, text
   default-language: Haskell2010
   ghc-options:      -Wall -Werror=incomplete-patterns
 
@@ -201,6 +201,7 @@ test-suite chordspec
                     , HUnit
                     , QuickCheck
                     , chord
+                    , common
                     , containers
                     , hspec
                     , hspec-expectations

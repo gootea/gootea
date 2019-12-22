@@ -12,8 +12,8 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 
 -- InMemoryStore
-data InMemoryStore a =
-  InMemoryStore (M.Map ID [a])
+data InMemoryStore v =
+  InMemoryStore (M.Map ID [v])
 
 instance Store InMemoryStore where
   addToStore target value (InMemoryStore map) =
@@ -23,5 +23,5 @@ instance Store InMemoryStore where
       addOrAppend (Just existing) = Just (value : existing)
   getFromStore target (InMemoryStore map) = fromMaybe [] $ M.lookup target map
 
-newStore :: InMemoryStore String
+newStore :: InMemoryStore v
 newStore = InMemoryStore M.empty
