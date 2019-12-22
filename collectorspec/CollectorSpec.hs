@@ -1,6 +1,6 @@
 module CollectorSpec where
 
-import Collector.Collector
+import Collector
 import Data.Maybe
 import Test.Hspec
 import Test.Hspec.QuickCheck

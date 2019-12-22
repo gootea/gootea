@@ -1,4 +1,4 @@
-module Collector.Collector
+module Collector
   ( Collection
   , newCollection
   -- , addToCollection

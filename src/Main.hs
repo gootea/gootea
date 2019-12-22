@@ -1,6 +1,6 @@
 module Main where
 
-import Collector.Collector
+import Collector
 import Control.Concurrent
 import Control.Monad
 import Control.Exception
