@@ -12,7 +12,7 @@ module Fabius.Searcher
 
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Fabius.InfoHash
+import Common.Models.InfoHash
 import Fabius.Key
 import Fabius.Query
 import qualified Fabius.SearchResults as SR

@@ -11,7 +11,7 @@ module Fabius.SearchResults
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Fabius.HDKMap as HM
-import Fabius.InfoHash
+import Common.Models.InfoHash
 import Fabius.Key
 import Fabius.Query
 

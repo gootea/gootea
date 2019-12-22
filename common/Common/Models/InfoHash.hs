@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Fabius.InfoHash
+module Common.Models.InfoHash
   ( InfoHash
   , newInfoHash
   ) where
@@ -13,3 +13,5 @@ newtype InfoHash =
 
 newInfoHash :: B.ByteString -> InfoHash
 newInfoHash = InfoHash
+
+
